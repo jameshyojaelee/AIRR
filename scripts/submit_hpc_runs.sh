@@ -34,17 +34,13 @@ RUN_TAG=${SLURM_JOB_ID:-$DATE_TAG}-gpu
 export AIRR_OUTPUT_ROOT="$REPO_ROOT/outputs/${CONFIG_NAME%.json}-${DATE_TAG}-gpu"
 
 # Try common module stacks; ignore if unavailable
-module load python 2>/dev/null || true
-module load python/3.10 2>/dev/null || true
-module load anaconda 2>/dev/null || true
-module load miniconda 2>/dev/null || true
-module load cuda 2>/dev/null || true
-module load cuda/11.8 2>/dev/null || true
+module load Python/3.10.8-GCCcore-12.2.0 2>/dev/null || module load python 2>/dev/null || true
+module load CUDA/11.7.0 2>/dev/null || module load CUDA/12.1.1 2>/dev/null || module load cuda 2>/dev/null || true
+module load PyTorch/1.12.0-foss-2022a-CUDA-11.7.0 2>/dev/null || module load PyTorch/2.1.2-foss-2023a 2>/dev/null || module load PyTorch 2>/dev/null || true
 module load cudnn 2>/dev/null || true
 module load gcc/11 2>/dev/null || true
-module load pytorch 2>/dev/null || true
-module load pytorch-gpu 2>/dev/null || true
-module load torch 2>/dev/null || true
+module load anaconda 2>/dev/null || true
+module load miniconda 2>/dev/null || true
 
 if [ -d "$HOME/.venvs/airrml" ]; then
   source "$HOME/.venvs/airrml/bin/activate"
