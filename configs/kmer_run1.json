@@ -6,5 +6,5 @@
   "model_params": { "c_grid": [3.0, 1.0, 0.3, 0.1, 0.03], "cv_folds": 5 },
   "feature_config": { "use_kmers": true, "k": 3, "use_vj": false },
   "training": { "cv_folds": 5, "random_state": 123 },
-  "submission": { "top_k_sequences": 50000, "submission_path": "outputs/kmer_run1/submission.csv" }
+  "submission": { "top_k_sequences": 1000, "submission_path": "outputs/kmer_run1/submission.csv" }
 }

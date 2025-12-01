@@ -15,6 +15,8 @@ try:
 except ImportError:  # pragma: no cover - yaml is optional
     yaml = None
 
+import pandas as pd
+
 from airrml import config as default_config
 from airrml import training
 from airrml.submission import assemble_submission

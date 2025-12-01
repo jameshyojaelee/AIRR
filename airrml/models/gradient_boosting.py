@@ -139,7 +139,12 @@ class GradientBoostingRepertoireModel(BaseRepertoireModel):
                 fit_kwargs["eval_set"] = [(X_val, y_val)]
                 fit_kwargs["early_stopping_rounds"] = self.early_stopping_rounds
                 fit_kwargs["verbose"] = False
-            self.model_.fit(X_train, y_train, **fit_kwargs)
+            try:
+                self.model_.fit(X_train, y_train, **fit_kwargs)
+            except TypeError:
+                # Older xgboost may not accept eval_metric via sklearn API
+                fit_kwargs.pop("eval_metric", None)
+                self.model_.fit(X_train, y_train, **fit_kwargs)
         elif self.backend_ == "lgbm":
             fit_kwargs = {"eval_metric": "auc"}
             if X_val is not None and y_val is not None:

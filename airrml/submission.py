@@ -127,9 +127,12 @@ def build_sequence_importance(
     if not hasattr(model, "get_sequence_importance"):
         raise RuntimeError("Model does not support sequence importance scoring.")
 
-    # Deduplicate sequences
+    # Deduplicate sequences and cap to avoid OOM
     seq_cols = ["junction_aa", "v_call", "j_call"]
     unique_seqs = train_sequences_df[seq_cols].drop_duplicates()
+    max_seqs = max(top_k * 5, top_k)
+    if len(unique_seqs) > max_seqs:
+        unique_seqs = unique_seqs.head(max_seqs)
 
     scored = model.get_sequence_importance(unique_seqs)
     if scored is None or scored.empty:
