@@ -1,0 +1,23 @@
+{
+  "train_root": "train_datasets",
+  "test_root": "test_datasets/test_datasets",
+  "output_root": "outputs/hpc_runs",
+  "model_name": "kmer_logreg",
+  "model_params": {
+    "c_grid": [3.0, 1.0, 0.3, 0.1, 0.03],
+    "cv_folds": 5
+  },
+  "feature_config": {
+    "use_kmers": true,
+    "k": 3,
+    "use_vj": false
+  },
+  "training": {
+    "cv_folds": 5,
+    "random_state": 123
+  },
+  "submission": {
+    "top_k_sequences": 50000,
+    "submission_path": "outputs/hpc_runs/submission.csv"
+  }
+}

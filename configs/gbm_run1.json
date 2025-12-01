@@ -1,0 +1,10 @@
+{
+  "train_root": "/gpfs/commons/home/jameslee/AIRR/train_datasets",
+  "test_root": "/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets",
+  "output_root": "/gpfs/commons/home/jameslee/AIRR/outputs/gbm_run1",
+  "model_name": "gbm",
+  "model_params": { "n_estimators": 600, "learning_rate": 0.05, "max_depth": 6, "subsample": 0.8, "colsample_bytree": 0.8 },
+  "feature_config": { "use_kmers": true, "k": 4, "use_vj": true },
+  "training": { "cv_folds": 5, "random_state": 123 },
+  "submission": { "top_k_sequences": 50000, "submission_path": "outputs/gbm_run1/submission.csv" }
+}

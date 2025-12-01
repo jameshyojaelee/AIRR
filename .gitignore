@@ -1,0 +1,28 @@
+# Bytecode / cache
+__pycache__/
+*.py[cod]
+
+# Environments
+.venv/
+venv/
+.env
+.env.*
+
+# Editors/IDE
+.vscode/
+.idea/
+
+# Logs and job outputs
+logs/
+*.out
+*.err
+
+# Data and generated artifacts
+train_datasets/
+test_datasets/
+toy_data/
+mini_data/
+outputs/
+
+# Large TSVs (competition datasets)
+*.tsv

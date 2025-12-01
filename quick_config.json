@@ -1,0 +1,19 @@
+{
+  "train_root": "toy_data/train_datasets",
+  "test_root": "toy_data/test_datasets",
+  "output_root": "outputs/quick_run",
+  "model_name": "kmer_logreg",
+  "feature_config": {
+    "use_kmers": true,
+    "k": 3,
+    "use_vj": false
+  },
+  "training": {
+    "cv_folds": 0,
+    "random_state": 123
+  },
+  "submission": {
+    "top_k_sequences": 20,
+    "submission_path": "outputs/quick_run/submission.csv"
+  }
+}
