@@ -1,0 +1,21 @@
+name: airrml
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - setuptools
+  - wheel
+  - numpy
+  - pandas
+  - scikit-learn
+  - joblib
+  - pyyaml
+  - xgboost
+  - lightgbm
+  - tqdm
+  - pip:
+      - "torch==2.1.2+cu121 --extra-index-url https://download.pytorch.org/whl/cu121"
+      - "torchvision==0.16.2+cu121 --extra-index-url https://download.pytorch.org/whl/cu121"
+      - "torchaudio==2.1.2+cu121 --extra-index-url https://download.pytorch.org/whl/cu121"
