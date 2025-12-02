@@ -33,24 +33,11 @@ DATE_TAG=$(date +%Y%m%d-%H%M%S)
 RUN_TAG=${SLURM_JOB_ID:-$DATE_TAG}-gpu
 export AIRR_OUTPUT_ROOT="$REPO_ROOT/outputs/${CONFIG_NAME%.json}-${DATE_TAG}-gpu"
 
-# Load matching Python + CUDA + PyTorch versions (fallback quietly if missing)
-module load Python/3.10.8-GCCcore-12.2.0 2>/dev/null || module load python 2>/dev/null || true
-module load CUDA/11.7.0 2>/dev/null || module load cuda 2>/dev/null || true
-module load PyTorch/1.12.0-foss-2022a-CUDA-11.7.0 2>/dev/null || module load PyTorch 2>/dev/null || true
-module load cudnn 2>/dev/null || true
-module load gcc/11 2>/dev/null || true
-module load anaconda 2>/dev/null || true
-module load miniconda 2>/dev/null || true
-
-if [ -d "$HOME/.venvs/airrml" ]; then
-  source "$HOME/.venvs/airrml/bin/activate"
-elif command -v mamba >/dev/null 2>&1; then
-  eval "$(mamba shell hook --shell bash)"
-  mamba activate airrml 2>/dev/null || true
-elif command -v conda >/dev/null 2>&1; then
-  eval "$(conda shell.bash hook)"
-  conda activate airrml 2>/dev/null || true
-fi
+# Activate conda env with working CUDA/cuDNN build (torch 2.1.2+cu121)
+source /nfs/sw/easybuild/software/Miniconda3/23.10.0-1/etc/profile.d/conda.sh
+conda activate airrml
+export PYTHONNOUSERSITE=1
+export PATH="$CONDA_PREFIX/bin:$PATH"
 
 export AIRR_TRAIN_ROOT=${AIRR_TRAIN_ROOT:-/gpfs/commons/home/jameslee/AIRR/train_datasets}
 export AIRR_TEST_ROOT=${AIRR_TEST_ROOT:-/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets}
