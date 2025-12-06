@@ -21,10 +21,8 @@ try:
     from torch import nn
     from torch.utils.data import DataLoader, Dataset
 except ImportError as e:  # pragma: no cover - deep models are optional
-    torch = None
-    nn = None
-    DataLoader = None
-    Dataset = None
+    # Fail fast with a clear error instead of letting class definitions crash later
+    raise ImportError("PyTorch is required for DeepMILModel; torch import failed") from e
 
 
 # ---------------------- Tokenization utilities ---------------------- #
