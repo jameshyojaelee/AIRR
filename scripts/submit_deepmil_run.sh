@@ -37,8 +37,8 @@ source /nfs/sw/easybuild/software/Miniconda3/23.10.0-1/etc/profile.d/conda.sh
 conda activate airrml
 export PYTHONNOUSERSITE=1
 export PATH="$CONDA_PREFIX/bin:$PATH"
-# Force CPU execution to avoid GPU kernel issues seen previously
-export CUDA_VISIBLE_DEVICES=""
+# Unbuffer Python stdout/stderr for live logging
+export PYTHONUNBUFFERED=1
 
 export AIRR_TRAIN_ROOT=${AIRR_TRAIN_ROOT:-/gpfs/commons/home/jameslee/AIRR/train_datasets}
 export AIRR_TEST_ROOT=${AIRR_TEST_ROOT:-/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets}
