@@ -1,0 +1,10 @@
+{
+  "train_root": "/gpfs/commons/home/jameslee/AIRR/train_datasets",
+  "test_root": "/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets",
+  "output_root": "/gpfs/commons/home/jameslee/AIRR/outputs/stacked_run1",
+  "model_name": "stacked_ensemble",
+  "model_params": { "base_models": ["kmer_logreg", "gbm"], "meta_folds": 5, "random_state": 123 },
+  "feature_config": { "use_kmers": true, "k": 5, "use_vj": true, "use_length": true },
+  "training": { "cv_folds": 5, "random_state": 123 },
+  "submission": { "top_k_sequences": 1000, "submission_path": "outputs/stacked_run1/submission.csv" }
+}

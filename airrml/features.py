@@ -92,6 +92,29 @@ def build_vj_usage_features(sequences_df: pd.DataFrame) -> pd.DataFrame:
     return X
 
 
+def build_length_features(
+    sequences_df: pd.DataFrame,
+    existing_info: Optional[Dict[str, Any]] = None,
+    sequence_col: str = "junction_aa",
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Compute simple CDR3 length statistics per repertoire.
+    """
+    if "ID" not in sequences_df.columns:
+        raise ValueError("sequences_df must contain an 'ID' column for repertoire grouping")
+
+    valid = sequences_df.dropna(subset=["ID", sequence_col]).copy()
+    valid["seq_len"] = valid[sequence_col].astype(str).str.len()
+
+    agg = valid.groupby("ID")["seq_len"].agg(["mean", "std", "min", "max", "median"]).fillna(0)
+    agg.index.name = "ID"
+    col_order = ["len_mean", "len_std", "len_min", "len_max", "len_median"]
+    agg.columns = col_order
+    feature_info = existing_info or {"vocabulary": col_order}
+    agg = agg.reindex(columns=feature_info["vocabulary"], fill_value=0)
+    return agg, feature_info
+
+
 def apply_vj_features(sequences_df: pd.DataFrame, feature_info: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply a fixed V/J vocabulary to new data.
@@ -115,8 +138,9 @@ def build_combined_feature_matrix(
     """
     use_kmers = config_dict.get("use_kmers", True)
     use_vj = config_dict.get("use_vj", False)
-    if not use_kmers and not use_vj:
-        raise ValueError("At least one feature type must be enabled (k-mers and/or VJ usage)")
+    use_length = config_dict.get("use_length", False)
+    if not use_kmers and not use_vj and not use_length:
+        raise ValueError("At least one feature type must be enabled (k-mers, VJ usage, or length stats)")
 
     feature_info = feature_info or {}
     new_feature_info: Dict[str, Any] = dict(feature_info)
@@ -138,6 +162,11 @@ def build_combined_feature_matrix(
             X_vj = build_vj_usage_features(sequences_df)
             new_feature_info["vj"] = {"vocabulary": X_vj.columns.tolist()}
         feature_blocks.append(X_vj)
+
+    if use_length:
+        X_len, len_info = build_length_features(sequences_df, feature_info.get("length"))
+        new_feature_info["length"] = len_info
+        feature_blocks.append(X_len)
 
     X = pd.concat(feature_blocks, axis=1) if feature_blocks else pd.DataFrame()
 

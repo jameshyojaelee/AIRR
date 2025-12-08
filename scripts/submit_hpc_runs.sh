@@ -25,6 +25,11 @@ RUNS=(
   "kmer_run1.json"
   "gbm_run1.json"
   "deepmil_run1.json"
+  "gbm_grid_k5_depth6.json"
+  "gbm_grid_k5_depth8.json"
+  "gbm_grid_k6_depth6.json"
+  "gbm_grid_k6_depth8_lr003.json"
+  "stacked_run1.json"
 )
 
 CONFIG_NAME=${RUNS[$SLURM_ARRAY_TASK_ID]}
