@@ -242,6 +242,8 @@ class DeepMILModel(BaseRepertoireModel):
         lr: float = 1e-3,
         weight_decay: float = 1e-5,
         device: Optional[str] = None,
+        max_sequences_per_rep: Optional[int] = None,
+        random_state: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -257,6 +259,8 @@ class DeepMILModel(BaseRepertoireModel):
         self.num_epochs = num_epochs
         self.lr = lr
         self.weight_decay = weight_decay
+        self.max_sequences_per_rep = max_sequences_per_rep
+        self.rng = np.random.default_rng(random_state)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
         self.model_: Optional[DeepMILNet] = None
@@ -276,6 +280,21 @@ class DeepMILModel(BaseRepertoireModel):
             collate_fn=lambda batch: collate_repertoires(batch, self.gene_vocabs_, self.max_len, self.device),
         )
 
+    def _subsample_sequences(self, sequences_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optionally subsample sequences per repertoire to cap memory.
+        """
+        if self.max_sequences_per_rep is None:
+            return sequences_df
+        sampled_parts: List[pd.DataFrame] = []
+        for rep_id, group in sequences_df.groupby("ID"):
+            if len(group) > self.max_sequences_per_rep:
+                idx = self.rng.choice(len(group), self.max_sequences_per_rep, replace=False)
+                sampled_parts.append(group.iloc[idx])
+            else:
+                sampled_parts.append(group)
+        return pd.concat(sampled_parts, ignore_index=True)
+
     def fit(
         self,
         X_train: pd.DataFrame,
@@ -286,6 +305,10 @@ class DeepMILModel(BaseRepertoireModel):
         """
         Train on sequence-level DataFrame (X_train) with labels provided as Series/DataFrame indexed by repertoire ID.
         """
+        X_train = self._subsample_sequences(X_train)
+        if X_val is not None:
+            X_val = self._subsample_sequences(X_val)
+
         self._build_gene_vocabs(X_train)
 
         # Initialize model
@@ -333,7 +356,7 @@ class DeepMILModel(BaseRepertoireModel):
                         break
 
         # Store feature metadata
-        self.feature_info = {"gene_vocabs": self.gene_vocabs_, "max_len": self.max_len}
+        self.feature_info = {"gene_vocabs": self.gene_vocabs_, "max_len": self.max_len, "max_sequences_per_rep": self.max_sequences_per_rep}
 
         return self
 
@@ -344,6 +367,7 @@ class DeepMILModel(BaseRepertoireModel):
             self._build_gene_vocabs(X)
         self.model_.eval()
 
+        X = self._subsample_sequences(X)
         loader = self._make_loader(X, labels=None, shuffle=False)
         all_probs: List[float] = []
         all_rep_ids: List[str] = []
@@ -368,6 +392,7 @@ class DeepMILModel(BaseRepertoireModel):
             self._build_gene_vocabs(sequences_df)
         self.model_.eval()
 
+        sequences_df = self._subsample_sequences(sequences_df)
         # Build loader with labels absent
         loader = self._make_loader(sequences_df, labels=None, shuffle=False)
         records: List[Dict[str, Any]] = []
