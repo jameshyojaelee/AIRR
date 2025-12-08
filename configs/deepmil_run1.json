@@ -3,7 +3,7 @@
   "test_root": "/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets",
   "output_root": "/gpfs/commons/home/jameslee/AIRR/outputs/deepmil_run1",
   "model_name": "deep_mil",
-  "model_params": { "aa_dim": 64, "hidden_dim": 256, "classifier_dim": 128, "batch_size": 2, "num_epochs": 3, "lr": 0.001, "weight_decay": 1e-5, "max_len": 30, "device": null, "max_sequences_per_rep": 500 },
+  "model_params": { "aa_dim": 48, "hidden_dim": 128, "classifier_dim": 64, "batch_size": 1, "num_epochs": 4, "lr": 0.001, "weight_decay": 1e-5, "max_len": 25, "device": null, "max_sequences_per_rep": 200 },
   "feature_config": {},
   "training": { "cv_folds": 2, "random_state": 123 },
   "submission": { "top_k_sequences": 1000, "submission_path": "outputs/deepmil_run1/submission.csv" }
