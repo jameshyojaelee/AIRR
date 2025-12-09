@@ -5,8 +5,8 @@
 
 #SBATCH --job-name=airrml-deepmil
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:l40s:1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/%x-%j.out
@@ -39,6 +39,8 @@ export PYTHONNOUSERSITE=1
 export PATH="$CONDA_PREFIX/bin:$PATH"
 # Unbuffer Python stdout/stderr for live logging
 export PYTHONUNBUFFERED=1
+# Encourage conservative GPU allocations to reduce fragmentation
+export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:64"
 
 export AIRR_TRAIN_ROOT=${AIRR_TRAIN_ROOT:-/gpfs/commons/home/jameslee/AIRR/train_datasets}
 export AIRR_TEST_ROOT=${AIRR_TEST_ROOT:-/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets}
