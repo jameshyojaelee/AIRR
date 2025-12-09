@@ -1,0 +1,41 @@
+{
+  "train_root": "train_datasets/train_datasets",
+  "feature_config": {
+    "use_kmers": true,
+    "k_list": [3, 4, 5, 6],
+    "tfidf": true,
+    "hashing": false,
+    "hash_size": 16384,
+    "use_vj": false,
+    "use_length": false
+  },
+  "models": [
+    {
+      "name": "kmer_logreg",
+      "n_trials": 30,
+      "search_space": {
+        "C": { "type": "loguniform", "low": 0.0005, "high": 10.0 },
+        "penalty": { "type": "categorical", "choices": ["l1", "l2"] }
+      }
+    },
+    {
+      "name": "gbm",
+      "n_trials": 40,
+      "search_space": {
+        "learning_rate": { "type": "loguniform", "low": 0.01, "high": 0.3 },
+        "max_depth": { "type": "int", "low": 3, "high": 8 },
+        "subsample": { "type": "uniform", "low": 0.6, "high": 1.0 },
+        "colsample_bytree": { "type": "uniform", "low": 0.6, "high": 1.0 },
+        "n_estimators": { "type": "int", "low": 200, "high": 600 }
+      }
+    }
+  ],
+  "hpo": {
+    "cv_folds": 5,
+    "random_state": 123,
+    "n_trials": 20,
+    "timeout": null,
+    "datasets": [],
+    "output_dir": "outputs/hpo_multik_tfidf"
+  }
+}

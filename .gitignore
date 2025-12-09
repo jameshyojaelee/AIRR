@@ -26,3 +26,5 @@ outputs/
 
 # Large TSVs (competition datasets)
 *.tsv
+
+prompts.md

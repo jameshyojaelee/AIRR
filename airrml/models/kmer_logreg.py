@@ -30,14 +30,16 @@ class KmerLogReg(BaseRepertoireModel):
         c_grid: Optional[List[float]] = None,
         cv_folds: int = 0,
         opt_metric: str = "roc_auc",
+        penalty: str = "l1",
         random_state: int = 123,
         n_jobs: int = -1,
         **kwargs: Any,
     ) -> None:
-        super().__init__(c_grid=c_grid, cv_folds=cv_folds, opt_metric=opt_metric, random_state=random_state, n_jobs=n_jobs, **kwargs)
+        super().__init__(c_grid=c_grid, cv_folds=cv_folds, opt_metric=opt_metric, penalty=penalty, random_state=random_state, n_jobs=n_jobs, **kwargs)
         self.c_grid = c_grid if c_grid is not None else [1.0]
         self.cv_folds = cv_folds
         self.opt_metric = opt_metric
+        self.penalty = penalty
         self.random_state = random_state
         self.n_jobs = n_jobs
 
@@ -58,14 +60,15 @@ class KmerLogReg(BaseRepertoireModel):
         """
         self.feature_names_ = list(X_train.columns)
 
+        solver = "liblinear" if self.penalty == "l1" else "lbfgs"
         pipeline = Pipeline(
             [
                 ("scaler", StandardScaler(with_mean=False)),
                 (
                     "clf",
                     LogisticRegression(
-                        penalty="l1",
-                        solver="liblinear",
+                        penalty=self.penalty,
+                        solver=solver,
                         max_iter=2000,
                         random_state=self.random_state,
                         n_jobs=self.n_jobs,

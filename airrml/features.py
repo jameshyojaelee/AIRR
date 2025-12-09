@@ -4,41 +4,81 @@ Feature engineering utilities for repertoire- and sequence-level models.
 The functions here stay model-agnostic: they only depend on pandas/numpy and
 can be reused across classical ML and deep learning pipelines.
 """
+import hashlib
 from collections import Counter
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
+import numpy as np
 import pandas as pd
 
 from airrml import config
 
 
+def _stable_hash(token: str, hash_size: int, hash_seed: int) -> int:
+    digest = hashlib.md5(f"{hash_seed}:{token}".encode("utf-8")).hexdigest()
+    return int(digest, 16) % hash_size
+
+
+def _iter_kmers(seq: str, k: int) -> Iterable[str]:
+    for i in range(len(seq) - k + 1):
+        yield seq[i : i + k]
+
+
+def _tfidf_transform(X: pd.DataFrame, idf: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series]:
+    if X.empty:
+        return X, idf if idf is not None else pd.Series(dtype=float)
+
+    if idf is None:
+        df = (X > 0).sum(axis=0)
+        idf_vals = np.log((len(X) + 1) / (df + 1)) + 1.0
+        idf = pd.Series(idf_vals, index=X.columns)
+    tfidf = X.mul(idf, axis=1)
+    norms = np.sqrt((tfidf**2).sum(axis=1))
+    norms = norms.replace(0, 1.0)
+    tfidf = tfidf.div(norms, axis=0)
+    return tfidf, idf
+
+
 def build_kmer_features(
     sequences_df: pd.DataFrame,
-    k: int = 3,
+    k: Union[int, List[int]] = 3,
     sequence_col: str = "junction_aa",
+    use_tfidf: bool = False,
+    hashing: bool = False,
+    hash_size: int = 2**15,
+    hash_seed: int = 17,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Compute k-mer counts per repertoire ID.
+    Compute k-mer counts (optionally multi-k, TF-IDF weighted, and hashed) per repertoire ID.
 
-    Returns a repertoire-level feature matrix X (index: ID) and feature_info
-    describing the k-mer vocabulary.
+    Returns a repertoire-level feature matrix X (index: ID) and feature_info describing
+    the k-mer vocabulary/hash space and TF-IDF idf weights if enabled.
     """
     if "ID" not in sequences_df.columns:
         raise ValueError("sequences_df must contain an 'ID' column for repertoire grouping")
 
+    k_list: List[int] = list(k) if isinstance(k, (list, tuple)) else [int(k)]
     valid = sequences_df.dropna(subset=["ID", sequence_col])
     rows = []
+    prefix_cols = hashing or len(k_list) > 1
 
     for rep_id, seq_series in valid.groupby("ID")[sequence_col]:
         kmer_counts: Counter[str] = Counter()
         for seq in seq_series:
             if not isinstance(seq, str):
                 continue
-            if len(seq) < k:
-                continue
-            for i in range(len(seq) - k + 1):
-                kmer = seq[i : i + k]
-                kmer_counts[kmer] += 1
+            for k_val in k_list:
+                if len(seq) < k_val:
+                    continue
+                for kmer in _iter_kmers(seq, k_val):
+                    token = f"{k_val}:{kmer}"
+                    if hashing:
+                        col = f"k{k_val}_h{_stable_hash(token, hash_size, hash_seed)}"
+                    elif prefix_cols:
+                        col = f"k{k_val}_{kmer}"
+                    else:
+                        col = kmer
+                    kmer_counts[col] += 1
         row = {"ID": rep_id}
         row.update(kmer_counts)
         rows.append(row)
@@ -49,7 +89,20 @@ def build_kmer_features(
     else:
         X = pd.DataFrame().set_index(pd.Index([], name="ID"))
 
-    feature_info = {"type": "kmer", "k": k, "vocabulary": X.columns.tolist()}
+    feature_info: Dict[str, Any] = {
+        "type": "kmer",
+        "k": k_list,
+        "vocabulary": X.columns.tolist(),
+        "hashing": hashing,
+        "hash_size": hash_size,
+        "hash_seed": hash_seed,
+        "tfidf": use_tfidf,
+    }
+
+    if use_tfidf:
+        X, idf = _tfidf_transform(X)
+        feature_info["idf"] = idf.tolist()
+
     return X, feature_info
 
 
@@ -59,14 +112,32 @@ def apply_kmer_features(
     sequence_col: str = "junction_aa",
 ) -> pd.DataFrame:
     """
-    Apply a fitted k-mer vocabulary to new sequences to produce aligned features.
+    Apply a fitted k-mer vocabulary/hash space to new sequences to produce aligned features.
     """
-    k = int(feature_info.get("k", 3))
+    k = feature_info.get("k", 3)
     vocab = feature_info.get("vocabulary", [])
+    use_tfidf = bool(feature_info.get("tfidf", False))
+    hashing = bool(feature_info.get("hashing", False))
+    hash_size = int(feature_info.get("hash_size", 2**15))
+    hash_seed = int(feature_info.get("hash_seed", 17))
 
-    X_raw, _ = build_kmer_features(sequences_df, k=k, sequence_col=sequence_col)
+    X_raw, _ = build_kmer_features(
+        sequences_df,
+        k=k,
+        sequence_col=sequence_col,
+        use_tfidf=False,
+        hashing=hashing,
+        hash_size=hash_size,
+        hash_seed=hash_seed,
+    )
     X_aligned = X_raw.reindex(columns=vocab, fill_value=0)
     X_aligned = X_aligned.reindex(columns=vocab)
+
+    if use_tfidf:
+        idf_vals = feature_info.get("idf")
+        idf = pd.Series(idf_vals, index=vocab) if idf_vals is not None else None
+        X_aligned, _ = _tfidf_transform(X_aligned, idf=idf)
+
     return X_aligned
 
 
@@ -147,11 +218,23 @@ def build_combined_feature_matrix(
     feature_blocks = []
 
     if use_kmers:
-        k = int(config_dict.get("k", 3))
+        k = config_dict.get("k_list", config_dict.get("k", 3))
+        use_tfidf = bool(config_dict.get("tfidf", False))
+        hashing = bool(config_dict.get("hashing", False))
+        hash_size = int(config_dict.get("hash_size", 2**15))
+        hash_seed = int(config_dict.get("hash_seed", 17))
+
         if "kmer" in feature_info:
             X_kmer = apply_kmer_features(sequences_df, feature_info["kmer"])
         else:
-            X_kmer, kmer_info = build_kmer_features(sequences_df, k=k)
+            X_kmer, kmer_info = build_kmer_features(
+                sequences_df,
+                k=k,
+                use_tfidf=use_tfidf,
+                hashing=hashing,
+                hash_size=hash_size,
+                hash_seed=hash_seed,
+            )
             new_feature_info["kmer"] = kmer_info
         feature_blocks.append(X_kmer)
 

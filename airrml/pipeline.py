@@ -58,6 +58,7 @@ def cross_validate_single_dataset(
     sequences_df, metadata_df = data_utils.load_full_dataset(train_path)
     cv_folds = training_config.get("cv_folds", config.DEFAULT_NUM_FOLDS)
     random_state = training_config.get("random_state", config.DEFAULT_RANDOM_SEED)
+    model_params = training_config.get("model_params", {})
     return evaluation.cross_validate_model(
         model_name=model_name,
         sequences_df=sequences_df,
@@ -65,6 +66,7 @@ def cross_validate_single_dataset(
         feature_config=feature_config,
         cv_folds=cv_folds,
         random_state=random_state,
+        model_params=model_params,
     )
 
 

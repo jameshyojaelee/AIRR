@@ -65,6 +65,7 @@ def train_on_dataset(
             feature_config=feature_config,
             cv_folds=cv_folds,
             random_state=random_state,
+            model_params=model_params,
         )
         metrics["cv"] = cv_results
 

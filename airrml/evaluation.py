@@ -60,6 +60,7 @@ def cross_validate_model(
     feature_config: Dict[str, Any],
     cv_folds: int = 5,
     random_state: int = 123,
+    model_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Run repertoire-level cross-validation within a single dataset.
@@ -90,7 +91,7 @@ def cross_validate_model(
             train_labels = y_full.loc[train_ids]
             val_labels = y_full.loc[val_ids]
 
-            model = get_model(model_name, random_state=random_state)
+            model = get_model(model_name, random_state=random_state, **(model_params or {}))
             model.fit(train_seq, train_labels)
             raw_probs = model.predict_proba(val_seq)
             # Align predictions to validation label order to avoid AUC misalignment
@@ -117,7 +118,7 @@ def cross_validate_model(
         X_train, y_train, feature_info = build_combined_feature_matrix(train_seq, train_label_df, feature_config)
         X_val, y_val, _ = build_combined_feature_matrix(val_seq, val_label_df, feature_config, feature_info=feature_info)
 
-        model = get_model(model_name, random_state=random_state)
+        model = get_model(model_name, random_state=random_state, **(model_params or {}))
         model.set_feature_info(feature_info)
         model.fit(X_train, y_train)
         val_probs = model.predict_proba(X_val)
