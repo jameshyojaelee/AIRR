@@ -147,26 +147,80 @@ def collate_repertoires(batch: List[RepertoireExample], gene_vocabs: Dict[str, D
 
 
 # ---------------------- Model components ---------------------- #
-class SequenceEncoder(nn.Module):
-    def __init__(self, aa_vocab_size: int, aa_dim: int, gene_vocab_sizes: Dict[str, int], gene_dims: Dict[str, int], hidden_dim: int):
+class PositionalEncoding(nn.Module):
+    """
+    Standard sinusoidal positional encoding added to token embeddings.
+    """
+
+    def __init__(self, dim: int, max_len: int = 512, dropout: float = 0.1):
         super().__init__()
-        self.aa_embed = nn.Embedding(aa_vocab_size, aa_dim, padding_idx=0)
+        self.dropout = nn.Dropout(dropout)
+
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, dim, 2).float() * (-np.log(10000.0) / dim))
+        pe = torch.zeros(max_len, dim)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [batch, seq_len, dim]
+        seq_len = x.size(1)
+        x = x + self.pe[:seq_len].unsqueeze(0)
+        return self.dropout(x)
+
+
+class SequenceEncoder(nn.Module):
+    """
+    Transformer-based encoder over amino acid tokens with optional V/J embeddings.
+    """
+
+    def __init__(
+        self,
+        aa_vocab_size: int,
+        model_dim: int,
+        num_heads: int,
+        num_layers: int,
+        ff_dim: int,
+        dropout: float,
+        max_len: int,
+        gene_vocab_sizes: Dict[str, int],
+        gene_dims: Dict[str, int],
+    ):
+        super().__init__()
+        self.model_dim = model_dim
+        self.aa_embed = nn.Embedding(aa_vocab_size, model_dim, padding_idx=0)
         self.v_embed = nn.Embedding(gene_vocab_sizes.get("v", 1), gene_dims.get("v", 0), padding_idx=0) if gene_dims.get("v", 0) > 0 else None
         self.j_embed = nn.Embedding(gene_vocab_sizes.get("j", 1), gene_dims.get("j", 0), padding_idx=0) if gene_dims.get("j", 0) > 0 else None
 
-        conv_in = aa_dim
-        self.conv = nn.Conv1d(conv_in, hidden_dim, kernel_size=5, padding=2)
-        self.act = nn.ReLU()
-        self.pool = nn.AdaptiveMaxPool1d(1)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=model_dim,
+            nhead=num_heads,
+            dim_feedforward=ff_dim,
+            dropout=dropout,
+            batch_first=True,
+            activation="gelu",
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.pos_enc = PositionalEncoding(model_dim, max_len=max_len, dropout=dropout)
+        self.pool_dropout = nn.Dropout(dropout)
 
         extra = (gene_dims.get("v", 0) + gene_dims.get("j", 0))
-        self.proj = nn.Linear(hidden_dim + extra, hidden_dim)
+        self.proj = nn.Linear(model_dim + extra, model_dim)
 
     def forward(self, tokens: torch.Tensor, v_ids: torch.Tensor, j_ids: torch.Tensor) -> torch.Tensor:
         # tokens: [N_seq, L]
-        aa_emb = self.aa_embed(tokens)  # [N_seq, L, aa_dim]
-        aa_emb = aa_emb.transpose(1, 2)  # [N_seq, aa_dim, L]
-        conv_out = self.pool(self.act(self.conv(aa_emb))).squeeze(-1)  # [N_seq, hidden_dim]
+        key_padding_mask = tokens.eq(0)  # [N_seq, L], True on padding
+        x = self.aa_embed(tokens)  # [N_seq, L, model_dim]
+        x = self.pos_enc(x)
+        x = self.transformer(x, src_key_padding_mask=key_padding_mask)
+
+        # Masked mean pooling over sequence length
+        mask = (~key_padding_mask).unsqueeze(-1)  # [N_seq, L, 1]
+        summed = (x * mask).sum(dim=1)
+        lengths = mask.sum(dim=1).clamp(min=1)
+        seq_emb = summed / lengths
+        seq_emb = self.pool_dropout(seq_emb)
 
         extras = []
         if self.v_embed is not None:
@@ -174,8 +228,8 @@ class SequenceEncoder(nn.Module):
         if self.j_embed is not None:
             extras.append(self.j_embed(j_ids))
         if extras:
-            conv_out = torch.cat([conv_out] + extras, dim=-1)
-        return self.proj(conv_out)
+            seq_emb = torch.cat([seq_emb] + extras, dim=-1)
+        return self.proj(seq_emb)
 
 
 class AttentionMIL(nn.Module):
@@ -209,12 +263,33 @@ class AttentionMIL(nn.Module):
 
 
 class DeepMILNet(nn.Module):
-    def __init__(self, aa_dim: int, gene_vocab_sizes: Dict[str, int], gene_dims: Dict[str, int], hidden_dim: int, classifier_dim: int):
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        num_layers: int,
+        ff_dim: int,
+        dropout: float,
+        max_len: int,
+        gene_vocab_sizes: Dict[str, int],
+        gene_dims: Dict[str, int],
+        classifier_dim: int,
+    ):
         super().__init__()
         aa_vocab_size = len(AA_TO_ID) + 2  # pad + unk
-        self.encoder = SequenceEncoder(aa_vocab_size, aa_dim, gene_vocab_sizes, gene_dims, hidden_dim)
-        self.pool = AttentionMIL(hidden_dim, hidden_dim)
-        self.classifier = nn.Sequential(nn.Linear(hidden_dim, classifier_dim), nn.ReLU(), nn.Linear(classifier_dim, 1))
+        self.encoder = SequenceEncoder(
+            aa_vocab_size=aa_vocab_size,
+            model_dim=model_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            ff_dim=ff_dim,
+            dropout=dropout,
+            max_len=max_len,
+            gene_vocab_sizes=gene_vocab_sizes,
+            gene_dims=gene_dims,
+        )
+        self.pool = AttentionMIL(model_dim, model_dim)
+        self.classifier = nn.Sequential(nn.Linear(model_dim, classifier_dim), nn.ReLU(), nn.Linear(classifier_dim, 1))
 
     def forward(self, tokens: torch.Tensor, v_ids: torch.Tensor, j_ids: torch.Tensor, rep_index: torch.Tensor, num_reps: int) -> Tuple[torch.Tensor, torch.Tensor]:
         seq_embs = self.encoder(tokens, v_ids, j_ids)
@@ -232,27 +307,38 @@ class DeepMILModel(BaseRepertoireModel):
 
     def __init__(
         self,
-        aa_dim: int = 64,
+        model_dim: Optional[int] = None,
+        aa_dim: Optional[int] = None,  # backward compatibility
+        hidden_dim: Optional[int] = None,  # backward compatibility
+        num_heads: int = 8,
+        num_layers: int = 4,
+        ff_dim: Optional[int] = None,
+        dropout: float = 0.1,
         gene_dims: Optional[Dict[str, int]] = None,
-        hidden_dim: int = 256,
         classifier_dim: int = 128,
-        max_len: int = 40,
-        batch_size: int = 4,
-        num_epochs: int = 10,
+        max_len: int = 60,
+        batch_size: int = 8,
+        num_epochs: int = 15,
         lr: float = 1e-3,
-        weight_decay: float = 1e-5,
+        weight_decay: float = 1e-4,
         device: Optional[str] = None,
         max_sequences_per_rep: Optional[int] = None,
         random_state: Optional[int] = None,
+        pretrained_encoder_path: Optional[str] = None,
+        freeze_encoder: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         if torch is None:
             raise ImportError("PyTorch is required for DeepMILModel.")
 
-        self.aa_dim = aa_dim
+        resolved_dim = model_dim or aa_dim or hidden_dim or 256
+        self.model_dim = int(resolved_dim)
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.ff_dim = ff_dim or model_dim * 4
+        self.dropout = dropout
         self.gene_dims = gene_dims or {"v": 16, "j": 8}
-        self.hidden_dim = hidden_dim
         self.classifier_dim = classifier_dim
         self.max_len = max_len
         self.batch_size = batch_size
@@ -260,6 +346,8 @@ class DeepMILModel(BaseRepertoireModel):
         self.lr = lr
         self.weight_decay = weight_decay
         self.max_sequences_per_rep = max_sequences_per_rep
+        self.pretrained_encoder_path = pretrained_encoder_path
+        self.freeze_encoder = freeze_encoder
         self.rng = np.random.default_rng(random_state)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
@@ -313,13 +401,35 @@ class DeepMILModel(BaseRepertoireModel):
 
         # Initialize model
         gene_vocab_sizes = {k: len(v) for k, v in self.gene_vocabs_.items()}
-        self.model_ = DeepMILNet(self.aa_dim, gene_vocab_sizes, self.gene_dims, self.hidden_dim, self.classifier_dim).to(self.device)
+        self.model_ = DeepMILNet(
+            model_dim=self.model_dim,
+            num_heads=self.num_heads,
+            num_layers=self.num_layers,
+            ff_dim=self.ff_dim,
+            dropout=self.dropout,
+            max_len=self.max_len,
+            gene_vocab_sizes=gene_vocab_sizes,
+            gene_dims=self.gene_dims,
+            classifier_dim=self.classifier_dim,
+        ).to(self.device)
+        if self.pretrained_encoder_path:
+            try:
+                state = torch.load(self.pretrained_encoder_path, map_location=self.device)
+                missing, unexpected = self.model_.encoder.load_state_dict(state, strict=False)
+                if missing or unexpected:
+                    print(f"Loaded encoder with missing keys {missing} and unexpected keys {unexpected}")
+            except Exception as e:
+                print(f"Warning: failed to load pretrained encoder: {e}")
+        if self.freeze_encoder:
+            for p in self.model_.encoder.parameters():
+                p.requires_grad = False
 
         train_loader = self._make_loader(X_train, y_train, shuffle=True)
         val_loader = self._make_loader(X_val, y_val, shuffle=False) if X_val is not None and y_val is not None else None
 
         criterion = nn.BCEWithLogitsLoss()
-        optimizer = torch.optim.Adam(self.model_.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        optimizer = torch.optim.AdamW(self.model_.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, self.num_epochs))
 
         best_val_loss = float("inf")
         patience = 3
@@ -335,6 +445,7 @@ class DeepMILModel(BaseRepertoireModel):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+            scheduler.step()
 
             if val_loader is not None:
                 self.model_.eval()
@@ -356,7 +467,16 @@ class DeepMILModel(BaseRepertoireModel):
                         break
 
         # Store feature metadata
-        self.feature_info = {"gene_vocabs": self.gene_vocabs_, "max_len": self.max_len, "max_sequences_per_rep": self.max_sequences_per_rep}
+        self.feature_info = {
+            "gene_vocabs": self.gene_vocabs_,
+            "max_len": self.max_len,
+            "max_sequences_per_rep": self.max_sequences_per_rep,
+            "model_dim": self.model_dim,
+            "num_heads": self.num_heads,
+            "num_layers": self.num_layers,
+            "ff_dim": self.ff_dim,
+            "dropout": self.dropout,
+        }
 
         return self
 
