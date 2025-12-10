@@ -163,6 +163,46 @@ def build_vj_usage_features(sequences_df: pd.DataFrame) -> pd.DataFrame:
     return X
 
 
+def build_tcrdist_nystrom_features(
+    sequences_df: pd.DataFrame,
+    dictionary_seqs: Optional[List[str]] = None,
+    num_dict: int = 128,
+    k: int = 3,
+    sequence_col: str = "junction_aa",
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Approximate TCRdist with Nyström-like features using k-mer cosine similarity to a dictionary of sequences.
+    """
+    if "ID" not in sequences_df.columns:
+        raise ValueError("sequences_df must contain an 'ID' column for repertoire grouping")
+
+    seqs = sequences_df.dropna(subset=[sequence_col])
+    if dictionary_seqs is None:
+        rng = np.random.default_rng(42)
+        sampled = seqs[sequence_col].dropna().astype(str).unique()
+        dictionary_seqs = rng.choice(sampled, size=min(num_dict, len(sampled)), replace=False).tolist() if len(sampled) else []
+
+    dict_df = pd.DataFrame({"ID": [f"dict_{i}" for i in range(len(dictionary_seqs))], sequence_col: dictionary_seqs})
+    dict_kmers, _ = build_kmer_features(dict_df, k=k, sequence_col=sequence_col, use_tfidf=False, hashing=False)
+
+    # Build k-mer features for repertoires
+    rep_kmers, _ = build_kmer_features(seqs, k=k, sequence_col=sequence_col, use_tfidf=False, hashing=False)
+    rep_kmers = rep_kmers.reindex(columns=dict_kmers.columns, fill_value=0)
+    dict_kmers = dict_kmers.reindex(columns=rep_kmers.columns, fill_value=0)
+
+    # Cosine similarity to dictionary as features
+    rep_mat = rep_kmers.to_numpy()
+    dict_mat = dict_kmers.to_numpy()
+    rep_norm = rep_mat / np.linalg.norm(rep_mat, axis=1, keepdims=True).clip(min=1e-9)
+    dict_norm = dict_mat / np.linalg.norm(dict_mat, axis=1, keepdims=True).clip(min=1e-9)
+    sim = rep_norm @ dict_norm.T  # [n_rep, num_dict]
+    feat_cols = [f"tcrdist_dict_{i}" for i in range(sim.shape[1])]
+    X = pd.DataFrame(sim, index=rep_kmers.index, columns=feat_cols)
+
+    feature_info = {"vocabulary": feat_cols, "dictionary": dictionary_seqs, "k": k}
+    return X, feature_info
+
+
 def build_length_features(
     sequences_df: pd.DataFrame,
     existing_info: Optional[Dict[str, Any]] = None,
@@ -210,8 +250,10 @@ def build_combined_feature_matrix(
     use_kmers = config_dict.get("use_kmers", True)
     use_vj = config_dict.get("use_vj", False)
     use_length = config_dict.get("use_length", False)
-    if not use_kmers and not use_vj and not use_length:
-        raise ValueError("At least one feature type must be enabled (k-mers, VJ usage, or length stats)")
+    use_tcrdist = config_dict.get("use_tcrdist_nystrom", False)
+    sequence_col = config_dict.get("sequence_col", config.SEQUENCE_COLS[0])
+    if not use_kmers and not use_vj and not use_length and not use_tcrdist:
+        raise ValueError("At least one feature type must be enabled (k-mers, VJ usage, length stats, or tcrdist)")
 
     feature_info = feature_info or {}
     new_feature_info: Dict[str, Any] = dict(feature_info)
@@ -237,6 +279,28 @@ def build_combined_feature_matrix(
             )
             new_feature_info["kmer"] = kmer_info
         feature_blocks.append(X_kmer)
+
+    if use_tcrdist:
+        if "tcrdist" in feature_info:
+            # reuse stored dictionary
+            dict_info = feature_info["tcrdist"]
+            X_tcr, _ = build_tcrdist_nystrom_features(
+                sequences_df,
+                dictionary_seqs=dict_info.get("dictionary"),
+                num_dict=len(dict_info.get("dictionary", [])),
+                k=dict_info.get("k", 3),
+                sequence_col=sequence_col,
+            )
+        else:
+            X_tcr, tcr_info = build_tcrdist_nystrom_features(
+                sequences_df,
+                dictionary_seqs=None,
+                num_dict=int(config_dict.get("tcrdist_num_dict", 128)),
+                k=int(config_dict.get("tcrdist_k", 3)),
+                sequence_col=sequence_col,
+            )
+            new_feature_info["tcrdist"] = tcr_info
+        feature_blocks.append(X_tcr)
 
     if use_vj:
         if "vj" in feature_info:

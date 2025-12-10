@@ -326,6 +326,13 @@ class DeepMILModel(BaseRepertoireModel):
         random_state: Optional[int] = None,
         pretrained_encoder_path: Optional[str] = None,
         freeze_encoder: bool = False,
+        aug_dropout: float = 0.0,
+        aug_mask: float = 0.0,
+        aug_shuffle_max: int = 0,
+        class_balance_sequences: bool = False,
+        use_amp: bool = True,
+        grad_clip: Optional[float] = 1.0,
+        early_stop_patience: int = 3,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -348,6 +355,13 @@ class DeepMILModel(BaseRepertoireModel):
         self.max_sequences_per_rep = max_sequences_per_rep
         self.pretrained_encoder_path = pretrained_encoder_path
         self.freeze_encoder = freeze_encoder
+        self.aug_dropout = aug_dropout
+        self.aug_mask = aug_mask
+        self.aug_shuffle_max = aug_shuffle_max
+        self.class_balance_sequences = class_balance_sequences
+        self.use_amp = use_amp
+        self.grad_clip = grad_clip
+        self.early_stop_patience = early_stop_patience
         self.rng = np.random.default_rng(random_state)
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
@@ -368,6 +382,42 @@ class DeepMILModel(BaseRepertoireModel):
             collate_fn=lambda batch: collate_repertoires(batch, self.gene_vocabs_, self.max_len, self.device),
         )
 
+    def _augment_sequences(self, sequences_df: pd.DataFrame) -> pd.DataFrame:
+        if self.aug_dropout <= 0 and self.aug_mask <= 0 and self.aug_shuffle_max <= 0:
+            return sequences_df
+        df = sequences_df.copy()
+        aug_seqs = []
+        for seq in df["junction_aa"].astype(str):
+            s = list(seq)
+            # dropout
+            if self.aug_dropout > 0:
+                s = [ch for ch in s if self.rng.random() > self.aug_dropout]
+            # mask
+            if self.aug_mask > 0:
+                s = [("X" if self.rng.random() < self.aug_mask else ch) for ch in s]
+            # shuffle
+            if self.aug_shuffle_max > 0 and len(s) > 1:
+                swaps = self.rng.integers(0, self.aug_shuffle_max + 1)
+                for _ in range(swaps):
+                    i, j = self.rng.integers(0, len(s), size=2)
+                    s[i], s[j] = s[j], s[i]
+            aug_seqs.append("".join(s) if s else seq)
+        df["junction_aa"] = aug_seqs
+        return df
+
+    def _balance_sequences(self, sequences_df: pd.DataFrame) -> pd.DataFrame:
+        if not self.class_balance_sequences or "label_positive" not in sequences_df.columns:
+            return sequences_df
+        grouped = sequences_df.groupby("label_positive")
+        max_count = grouped.size().max()
+        balanced = []
+        for _, group in grouped:
+            if len(group) < max_count:
+                reps = int(np.ceil(max_count / len(group)))
+                balanced.append(pd.concat([group] * reps, ignore_index=True).iloc[:max_count])
+            else:
+                balanced.append(group)
+        return pd.concat(balanced, ignore_index=True)
     def _subsample_sequences(self, sequences_df: pd.DataFrame) -> pd.DataFrame:
         """
         Optionally subsample sequences per repertoire to cap memory.
@@ -393,8 +443,11 @@ class DeepMILModel(BaseRepertoireModel):
         """
         Train on sequence-level DataFrame (X_train) with labels provided as Series/DataFrame indexed by repertoire ID.
         """
+        X_train = self._augment_sequences(X_train)
+        X_train = self._balance_sequences(X_train)
         X_train = self._subsample_sequences(X_train)
         if X_val is not None:
+            X_val = self._augment_sequences(X_val)
             X_val = self._subsample_sequences(X_val)
 
         self._build_gene_vocabs(X_train)
@@ -431,21 +484,38 @@ class DeepMILModel(BaseRepertoireModel):
         optimizer = torch.optim.AdamW(self.model_.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, self.num_epochs))
 
+        scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp and self.device.type == "cuda")
         best_val_loss = float("inf")
-        patience = 3
+        patience = self.early_stop_patience
         patience_ctr = 0
+        best_state: Optional[Dict[str, torch.Tensor]] = None
 
         for epoch in range(self.num_epochs):
             self.model_.train()
             for batch in train_loader:
-                logits, _ = self.model_(batch["tokens"], batch["v_ids"], batch["j_ids"], batch["rep_index"], batch["num_reps"])
-                if batch["labels"] is None:
-                    continue
-                loss = criterion(logits, batch["labels"].to(self.device))
+                with torch.cuda.amp.autocast(enabled=self.use_amp and self.device.type == "cuda"):
+                    logits, _ = self.model_(batch["tokens"], batch["v_ids"], batch["j_ids"], batch["rep_index"], batch["num_reps"])
+                    if batch["labels"] is None:
+                        continue
+                    loss = criterion(logits, batch["labels"].to(self.device))
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    if self.grad_clip is not None:
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model_.parameters(), self.grad_clip)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    if self.grad_clip is not None:
+                        torch.nn.utils.clip_grad_norm_(self.model_.parameters(), self.grad_clip)
+                    optimizer.step()
             scheduler.step()
+            if torch.cuda.is_available() and self.device.type == "cuda":
+                alloc = torch.cuda.memory_allocated(self.device) / 1e6
+                torch.cuda.reset_peak_memory_stats(self.device)
+                print(f"[Epoch {epoch+1}] GPU memory allocated: {alloc:.1f} MB")
 
             if val_loader is not None:
                 self.model_.eval()
@@ -460,11 +530,14 @@ class DeepMILModel(BaseRepertoireModel):
                 avg_val = np.mean(val_losses) if val_losses else float("inf")
                 if avg_val < best_val_loss:
                     best_val_loss = avg_val
+                    best_state = self.model_.state_dict()
                     patience_ctr = 0
                 else:
                     patience_ctr += 1
                     if patience_ctr >= patience:
                         break
+        if best_state is not None:
+            self.model_.load_state_dict(best_state)
 
         # Store feature metadata
         self.feature_info = {
@@ -506,6 +579,9 @@ class DeepMILModel(BaseRepertoireModel):
         sequences_df: pd.DataFrame,
         sequence_col: str = "junction_aa",
     ) -> pd.DataFrame:
+        """
+        Score sequences using attention weights combined with gradient-based saliency.
+        """
         if self.model_ is None:
             raise RuntimeError("Model has not been fitted.")
         if not self.gene_vocabs_:
@@ -516,24 +592,31 @@ class DeepMILModel(BaseRepertoireModel):
         # Build loader with labels absent
         loader = self._make_loader(sequences_df, labels=None, shuffle=False)
         records: List[Dict[str, Any]] = []
-        with torch.no_grad():
-            for batch in loader:
-                logits, att_weights = self.model_(batch["tokens"], batch["v_ids"], batch["j_ids"], batch["rep_index"], batch["num_reps"])
-                # att_weights is concatenated across repertoires in the batch in the same order as tokens
-                att_cpu = att_weights.detach().cpu().numpy()
-                # Map back to sequences in the original DataFrame order per repertoire
-                seq_idx = 0
-                for rep_idx, rep_id in enumerate(batch["rep_ids"]):
-                    mask = batch["rep_index"] == rep_idx
-                    num_seqs = int(mask.sum().item())
-                    rep_seqs = sequences_df[sequences_df["ID"] == rep_id]
-                    if num_seqs != len(rep_seqs):
-                        num_seqs = min(num_seqs, len(rep_seqs))
-                    weights_rep = att_cpu[seq_idx : seq_idx + num_seqs]
-                    rep_slice = rep_seqs.iloc[:num_seqs].copy()
-                    rep_slice["importance_score"] = weights_rep
-                    records.append(rep_slice)
-                    seq_idx += num_seqs
+        for batch in loader:
+            batch_tokens = batch["tokens"].clone().detach().to(self.device)
+            batch_tokens.requires_grad = True
+            logits, att_weights = self.model_(batch_tokens, batch["v_ids"], batch["j_ids"], batch["rep_index"], batch["num_reps"])
+            probs = torch.sigmoid(logits)
+            prob_sum = probs.sum()
+            prob_sum.backward()
+            grads = batch_tokens.grad  # [N_seq, L]
+
+            att_cpu = att_weights.detach().cpu().numpy()
+            grad_scores = grads.detach().abs().sum(dim=1).cpu().numpy()
+
+            seq_idx = 0
+            for rep_idx, rep_id in enumerate(batch["rep_ids"]):
+                mask = batch["rep_index"] == rep_idx
+                num_seqs = int(mask.sum().item())
+                rep_seqs = sequences_df[sequences_df["ID"] == rep_id]
+                if num_seqs != len(rep_seqs):
+                    num_seqs = min(num_seqs, len(rep_seqs))
+                weights_rep = att_cpu[seq_idx : seq_idx + num_seqs]
+                grad_rep = grad_scores[seq_idx : seq_idx + num_seqs]
+                rep_slice = rep_seqs.iloc[:num_seqs].copy()
+                rep_slice["importance_score"] = 0.5 * weights_rep + 0.5 * grad_rep
+                records.append(rep_slice)
+                seq_idx += num_seqs
         if records:
             out_df = pd.concat(records, ignore_index=True)
         else:

@@ -46,21 +46,24 @@ export AIRR_TEST_ROOT=${AIRR_TEST_ROOT:-/gpfs/commons/home/jameslee/AIRR/test_da
 export PYTHONPATH="$REPO_ROOT"
 
 # Write a temp config with updated seed and output_root
-python3 - <<PY
-import json, os, pathlib
-base = pathlib.Path("${BASE_CONFIG}")
+python3 - <<'PY'
+import json, pathlib, os
+base = pathlib.Path(os.environ["BASE_CONFIG"])
+tmp = pathlib.Path(os.environ["TMP_CONFIG"])
+run_tag = os.environ["RUN_TAG"]
+seed = int(os.environ["SEED"])
 with base.open() as f:
     cfg = json.load(f)
-cfg.setdefault("training", {})["random_state"] = ${SEED}
-cfg["output_root"] = str(base.parent.parent / "outputs" / f"deepmil_transformer-{RUN_TAG}")
-tmp = pathlib.Path("${TMP_CONFIG}")
+cfg.setdefault("training", {})["random_state"] = seed
+cfg["output_root"] = str(base.parent.parent / "outputs" / f"deepmil_transformer-{run_tag}")
 tmp.write_text(json.dumps(cfg, indent=2))
 print(f"Temp config written to {tmp}")
 PY
 
-AIRR_OUTPUT_ROOT="$(python3 - <<PY
-import json, pathlib
-cfg = json.loads(pathlib.Path("${TMP_CONFIG}").read_text())
+AIRR_OUTPUT_ROOT="$(python3 - <<'PY'
+import json, pathlib, os
+tmp = pathlib.Path(os.environ["TMP_CONFIG"])
+cfg = json.loads(tmp.read_text())
 print(cfg.get("output_root", "outputs"))
 PY
 )"

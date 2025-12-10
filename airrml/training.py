@@ -40,6 +40,7 @@ def train_on_dataset(
     cv_folds: int = 5,
     random_state: int = 123,
     model_params: Optional[Dict[str, Any]] = None,
+    resume: bool = False,
 ) -> Dict[str, Any]:
     """
     Train a model on a single train_dataset_X and optionally run cross-validation.
@@ -91,7 +92,10 @@ def train_on_dataset(
 
     # Try model-specific save if available
     saved = False
-    if hasattr(model, "save"):
+    if resume and model_path.exists():
+        # Skip saving if resuming (model already on disk)
+        saved = True
+    if hasattr(model, "save") and not saved:
         try:
             model.save(str(model_path))
             saved = True

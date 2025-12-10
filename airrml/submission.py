@@ -18,6 +18,7 @@ import warnings
 from airrml import config, data
 from airrml.features import build_combined_feature_matrix
 from airrml.models import get_model
+from airrml import seq_importance
 
 try:  # Optional torch dependency for deep models
     import torch
@@ -120,13 +121,11 @@ def build_sequence_importance(
     train_sequences_df: pd.DataFrame,
     dataset_name: str,
     top_k: int = 50000,
+    feature_info: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """
     Build sequence-level rows using model-provided importance scores.
     """
-    if not hasattr(model, "get_sequence_importance"):
-        raise RuntimeError("Model does not support sequence importance scoring.")
-
     # Deduplicate sequences and cap to avoid OOM
     seq_cols = ["junction_aa", "v_call", "j_call"]
     unique_seqs = train_sequences_df[seq_cols].drop_duplicates()
@@ -134,20 +133,13 @@ def build_sequence_importance(
     if len(unique_seqs) > max_seqs:
         unique_seqs = unique_seqs.head(max_seqs)
 
-    scored = model.get_sequence_importance(unique_seqs)
+    scored = seq_importance.score_sequences(model, unique_seqs, feature_info=feature_info)
     if scored is None or scored.empty:
         raise RuntimeError("Model did not return sequence importance scores.")
 
-    scored = scored.dropna(subset=["junction_aa"])
-    scored = scored.sort_values("importance_score", ascending=False).head(top_k)
+    scored = seq_importance.select_top_sequences(scored, top_k=top_k)
 
-    scored = scored.reset_index(drop=True)
-    scored["ID"] = scored.index + 1
-    scored["ID"] = scored["ID"].apply(lambda x: f"{dataset_name}_seq_top_{x}")
-    scored["dataset"] = dataset_name
-    scored["label_positive_probability"] = config.PROBABILITY_PLACEHOLDER
-
-    return scored[["ID", "dataset", "label_positive_probability", "junction_aa", "v_call", "j_call"]]
+    return seq_importance.format_sequence_rows(scored, dataset_name)
 
 
 def assemble_submission(
@@ -179,7 +171,7 @@ def assemble_submission(
 
         # Sequence importance (Task 2)
         try:
-            seq_rows = build_sequence_importance(model, train_seq_df, dataset_name, top_k=top_k_sequences)
+            seq_rows = build_sequence_importance(model, train_seq_df, dataset_name, top_k=top_k_sequences, feature_info=feature_info)
             all_rows.append(seq_rows)
         except Exception as exc:
             warnings.warn(f"Skipping sequence importance for {dataset_name}: {exc}")

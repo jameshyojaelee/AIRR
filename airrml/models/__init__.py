@@ -32,7 +32,7 @@ def get_model(name: str, **kwargs) -> BaseRepertoireModel:
     import_errors = []
     if name not in MODEL_REGISTRY:
         # Lazy import model modules to populate registry
-        for module in ["kmer_logreg", "gradient_boosting", "deep_mil", "stacked_ensemble"]:
+        for module in ["kmer_logreg", "gradient_boosting", "deep_mil", "stacked_ensemble", "tcrdist_knn"]:
             try:
                 importlib.import_module(f"airrml.models.{module}")
             except Exception as e:

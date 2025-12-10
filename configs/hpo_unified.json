@@ -1,0 +1,25 @@
+{
+  "train_root": "train_datasets/train_datasets",
+  "feature_config": {
+    "use_kmers": true,
+    "k_list": [3, 4],
+    "tfidf": true,
+    "hashing": false
+  },
+  "model_name": "deep_mil",
+  "search_space": {
+    "model_dim": { "type": "categorical", "choices": [256, 384, 512] },
+    "num_heads": { "type": "categorical", "choices": [8, 12] },
+    "num_layers": { "type": "categorical", "choices": [4, 6] },
+    "dropout": { "type": "uniform", "low": 0.05, "high": 0.3 },
+    "lr": { "type": "loguniform", "low": 0.0001, "high": 0.001 },
+    "weight_decay": { "type": "loguniform", "low": 1e-5, "high": 5e-4 },
+    "max_sequences_per_rep": { "type": "int", "low": 400, "high": 1200 }
+  },
+  "cv_folds": 3,
+  "random_state": 42,
+  "n_trials": 10,
+  "timeout": null,
+  "datasets": [],
+  "output_dir": "outputs/hpo_unified"
+}

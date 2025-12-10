@@ -27,13 +27,17 @@ class StackedEnsemble(BaseRepertoireModel):
         meta_folds: int = 5,
         random_state: int = 123,
         n_jobs: int = -1,
+        calibrate: bool = True,
+        calibrator: str = "isotonic",
         **kwargs: Any,
     ) -> None:
-        super().__init__(base_models=base_models, meta_folds=meta_folds, random_state=random_state, n_jobs=n_jobs, **kwargs)
-        self.base_model_names = base_models or ["kmer_logreg", "gbm"]
+        super().__init__(base_models=base_models, meta_folds=meta_folds, random_state=random_state, n_jobs=n_jobs, calibrate=calibrate, calibrator=calibrator, **kwargs)
+        self.base_model_names = base_models or ["kmer_logreg", "gbm", "tcrdist_knn"]
         self.meta_folds = meta_folds
         self.random_state = random_state
         self.n_jobs = n_jobs
+        self.calibrate = calibrate
+        self.calibrator = calibrator
 
         self.base_models_: Optional[List[BaseRepertoireModel]] = None
         self.meta_model_: Optional[LogisticRegression] = None
@@ -75,6 +79,14 @@ class StackedEnsemble(BaseRepertoireModel):
         meta_model = LogisticRegression(max_iter=1000, solver="lbfgs")
         meta_model.fit(oof_preds, y_arr)
 
+        # Optional calibration on OOF preds
+        if self.calibrate:
+            from sklearn.calibration import CalibratedClassifierCV
+
+            calibrator = CalibratedClassifierCV(base_estimator=meta_model, method=self.calibrator, cv="prefit")
+            calibrator.fit(oof_preds, y_arr)
+            meta_model = calibrator
+
         # Train base models on full data for inference
         fitted_base: List[BaseRepertoireModel] = []
         for name in self.base_model_names:
@@ -99,4 +111,5 @@ class StackedEnsemble(BaseRepertoireModel):
         for model in self.base_models_:
             base_pred_blocks.append(model.predict_proba(X_aligned))
         meta_features = np.column_stack(base_pred_blocks)
-        return self.meta_model_.predict_proba(meta_features)[:, 1]
+        preds = self.meta_model_.predict_proba(meta_features)[:, 1]
+        return preds
