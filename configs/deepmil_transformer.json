@@ -1,6 +1,6 @@
 {
-  "train_root": "train_datasets/train_datasets",
-  "test_root": "test_datasets/test_datasets",
+  "train_root": "/gpfs/commons/home/jameslee/AIRR/train_datasets",
+  "test_root": "/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets",
   "output_root": "outputs/deepmil_transformer",
   "model_name": "deep_mil",
   "model_params": {

@@ -1,5 +1,5 @@
 {
-  "train_root": "train_datasets/train_datasets",
+  "train_root": "/gpfs/commons/home/jameslee/AIRR/train_datasets",
   "datasets": [],
   "output_path": "outputs/contrastive/encoder.pt",
   "model": {
