@@ -341,9 +341,11 @@ class DeepMILModel(BaseRepertoireModel):
 
         resolved_dim = model_dim or aa_dim or hidden_dim or 256
         self.model_dim = int(resolved_dim)
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.ff_dim = ff_dim or model_dim * 4
+        self.num_heads = int(num_heads)
+        self.num_layers = int(num_layers)
+        if self.model_dim % self.num_heads != 0:
+            raise ValueError(f"model_dim ({self.model_dim}) must be divisible by num_heads ({self.num_heads}).")
+        self.ff_dim = int(ff_dim or (self.model_dim * 4))
         self.dropout = dropout
         self.gene_dims = gene_dims or {"v": 16, "j": 8}
         self.classifier_dim = classifier_dim
@@ -588,35 +590,86 @@ class DeepMILModel(BaseRepertoireModel):
             self._build_gene_vocabs(sequences_df)
         self.model_.eval()
 
-        sequences_df = self._subsample_sequences(sequences_df)
+        # Fast path: score standalone sequences by classifier logit (treat each as a single-instance repertoire).
+        if "ID" not in sequences_df.columns:
+            flat = sequences_df.copy().reset_index(drop=True)
+            for col in (sequence_col, "v_call", "j_call"):
+                if col not in flat.columns:
+                    flat[col] = ""
+            flat[sequence_col] = flat[sequence_col].fillna("").astype(str)
+            flat["v_call"] = flat["v_call"].fillna("").astype(str)
+            flat["j_call"] = flat["j_call"].fillna("").astype(str)
+            if flat.empty:
+                return pd.DataFrame(columns=[sequence_col, "v_call", "j_call", "importance_score"])
+
+            batch_size = max(128, self.batch_size * 16)
+            scores: List[float] = []
+            with torch.no_grad():
+                for start in range(0, len(flat), batch_size):
+                    sub = flat.iloc[start : start + batch_size]
+                    token_lists = [encode_aa_sequence(s, max_len=self.max_len) for s in sub[sequence_col].tolist()]
+                    max_seq_len = max((len(t) for t in token_lists), default=1)
+                    tokens = torch.zeros((len(token_lists), max_seq_len), dtype=torch.long, device=self.device)
+                    for i, t in enumerate(token_lists):
+                        if t:
+                            tokens[i, : len(t)] = torch.tensor(t, dtype=torch.long, device=self.device)
+                    v_ids = torch.tensor([self.gene_vocabs_["v"].get(v, 0) for v in sub["v_call"].tolist()], dtype=torch.long, device=self.device)
+                    j_ids = torch.tensor([self.gene_vocabs_["j"].get(j, 0) for j in sub["j_call"].tolist()], dtype=torch.long, device=self.device)
+                    seq_embs = self.model_.encoder(tokens, v_ids, j_ids)
+                    logits = self.model_.classifier(seq_embs).squeeze(-1)
+                    scores.extend(logits.detach().cpu().numpy().tolist())
+
+            out = flat[[sequence_col, "v_call", "j_call"]].copy()
+            out["importance_score"] = scores
+            return out[[sequence_col, "v_call", "j_call", "importance_score"]]
+
+        # Allow scoring a flat list of unique sequences by treating each row as its own "repertoire".
+        sequences_work = sequences_df.copy().reset_index(drop=True)
+        if "ID" not in sequences_work.columns:
+            sequences_work["ID"] = sequences_work.index.astype(str)
+        sequences_work["ID"] = sequences_work["ID"].astype(str)
+        for col in (sequence_col, "v_call", "j_call"):
+            if col not in sequences_work.columns:
+                sequences_work[col] = ""
+
+        sequences_work = self._subsample_sequences(sequences_work)
         # Build loader with labels absent
-        loader = self._make_loader(sequences_df, labels=None, shuffle=False)
+        loader = self._make_loader(sequences_work, labels=None, shuffle=False)
         records: List[Dict[str, Any]] = []
         for batch in loader:
-            batch_tokens = batch["tokens"].clone().detach().to(self.device)
-            batch_tokens.requires_grad = True
-            logits, att_weights = self.model_(batch_tokens, batch["v_ids"], batch["j_ids"], batch["rep_index"], batch["num_reps"])
-            probs = torch.sigmoid(logits)
-            prob_sum = probs.sum()
-            prob_sum.backward()
-            grads = batch_tokens.grad  # [N_seq, L]
+            if self.model_ is None:
+                break
+            self.model_.zero_grad(set_to_none=True)
 
-            att_cpu = att_weights.detach().cpu().numpy()
-            grad_scores = grads.detach().abs().sum(dim=1).cpu().numpy()
+            tokens = batch["tokens"]
+            v_ids = batch["v_ids"]
+            j_ids = batch["j_ids"]
+            rep_index = batch["rep_index"]
+            num_reps = batch["num_reps"]
+
+            # Compute gradients w.r.t. sequence embeddings (tokens are integer, so cannot require grad).
+            with torch.enable_grad():
+                seq_embs = self.model_.encoder(tokens, v_ids, j_ids).detach().requires_grad_(True)
+                rep_embs, att_weights = self.model_.pool(seq_embs, rep_index, num_reps)
+                logits = self.model_.classifier(rep_embs).squeeze(-1)
+                probs = torch.sigmoid(logits)
+                probs.sum().backward()
+
+            grad_scores = seq_embs.grad.detach().abs().sum(dim=1)
+            if grad_scores.numel() > 0:
+                grad_scores = (grad_scores - grad_scores.min()) / (grad_scores.max() - grad_scores.min() + 1e-8)
+            scores = 0.5 * att_weights.detach() + 0.5 * grad_scores
 
             seq_idx = 0
             for rep_idx, rep_id in enumerate(batch["rep_ids"]):
-                mask = batch["rep_index"] == rep_idx
-                num_seqs = int(mask.sum().item())
-                rep_seqs = sequences_df[sequences_df["ID"] == rep_id]
-                if num_seqs != len(rep_seqs):
-                    num_seqs = min(num_seqs, len(rep_seqs))
-                weights_rep = att_cpu[seq_idx : seq_idx + num_seqs]
-                grad_rep = grad_scores[seq_idx : seq_idx + num_seqs]
-                rep_slice = rep_seqs.iloc[:num_seqs].copy()
-                rep_slice["importance_score"] = 0.5 * weights_rep + 0.5 * grad_rep
+                mask = rep_index == rep_idx
+                n_batch = int(mask.sum().item())
+                rep_seqs = sequences_work[sequences_work["ID"] == rep_id]
+                take = min(n_batch, len(rep_seqs))
+                rep_slice = rep_seqs.iloc[:take].copy()
+                rep_slice["importance_score"] = scores[seq_idx : seq_idx + take].detach().cpu().numpy()
                 records.append(rep_slice)
-                seq_idx += num_seqs
+                seq_idx += n_batch
         if records:
             out_df = pd.concat(records, ignore_index=True)
         else:

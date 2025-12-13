@@ -4,7 +4,8 @@ Sequence-level importance computation utilities.
 Supports model-provided importance, optional SHAP projection for tabular models,
 and simple dedup/near-duplicate collapsing to maximize coverage.
 """
-from typing import Iterable, Optional, Tuple
+from collections import defaultdict
+from typing import Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -45,7 +46,7 @@ def _edit_distance_leq1(a: str, b: str) -> bool:
     return diff <= 1
 
 
-def cluster_near_duplicates(df: pd.DataFrame, seq_col: str = "junction_aa", max_pairs: int = 5000) -> pd.DataFrame:
+def cluster_near_duplicates(df: pd.DataFrame, seq_col: str = "junction_aa", max_bucket_size: int = 5000) -> pd.DataFrame:
     """
     Collapse near-duplicate sequences (edit distance <=1). Keeps the highest scoring instance.
     """
@@ -53,17 +54,25 @@ def cluster_near_duplicates(df: pd.DataFrame, seq_col: str = "junction_aa", max_
         return df
     df = df.copy()
     df = df.sort_values("importance_score", ascending=False)
-    kept = []
-    seen: list[str] = []
+    buckets: dict[tuple[int, str, str], list[str]] = defaultdict(list)
+    kept_rows = []
     for _, row in df.iterrows():
         seq = str(row.get(seq_col, ""))
-        if any(_edit_distance_leq1(seq, s) for s in seen):
+        if not seq:
             continue
-        kept.append(row)
-        seen.append(seq)
-        if len(seen) > max_pairs:
-            break
-    return pd.DataFrame(kept)
+        prefix = seq[:3]
+        suffix = seq[-3:]
+        candidates: list[str] = []
+        for L in (len(seq) - 1, len(seq), len(seq) + 1):
+            candidates.extend(buckets.get((L, prefix, suffix), []))
+        if any(_edit_distance_leq1(seq, s) for s in candidates):
+            continue
+        kept_rows.append(row)
+        key = (len(seq), prefix, suffix)
+        buckets[key].append(seq)
+        if len(buckets[key]) > max_bucket_size:
+            buckets[key] = buckets[key][-max_bucket_size:]
+    return pd.DataFrame(kept_rows)
 
 
 def shap_score_sequences(

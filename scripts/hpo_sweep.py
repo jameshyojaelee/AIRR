@@ -69,6 +69,12 @@ def run_study(
 
     def objective(trial: optuna.trial.Trial) -> float:
         params = suggest_params(trial, model_space)
+        # Basic architecture constraint for transformers
+        if model_name == "deep_mil":
+            model_dim = params.get("model_dim")
+            num_heads = params.get("num_heads")
+            if model_dim is not None and num_heads is not None and int(model_dim) % int(num_heads) != 0:
+                raise optuna.TrialPruned("model_dim must be divisible by num_heads")
         res = evaluation.cross_validate_model(
             model_name=model_name,
             sequences_df=sequences_df,
@@ -81,7 +87,7 @@ def run_study(
         auc = res.get("mean_auc", float("nan"))
         return 0.0 if auc is None or np.isnan(auc) else float(auc)
 
-    study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=True)
+    study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=True, catch=(Exception,))
     return study
 
 
@@ -126,10 +132,18 @@ def main() -> None:
         ds_out = output_dir / ds / f"trial_offset_{args.trial_offset}"
         ensure_dir(ds_out)
         study.trials_dataframe().to_csv(ds_out / "trials.csv", index=False)
-        with (ds_out / "best_params.json").open("w") as f:
-            json.dump(study.best_params, f, indent=2)
-        rows.append({"dataset": ds, "best_auc": study.best_value, "best_params_path": str(ds_out / "best_params.json")})
-        print(f"{ds}: best AUC {study.best_value}")
+        best_params_path = ds_out / "best_params.json"
+        completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        if completed:
+            best_params = study.best_params
+            best_value = study.best_value
+        else:
+            best_params = {}
+            best_value = float("nan")
+        with best_params_path.open("w") as f:
+            json.dump(best_params, f, indent=2)
+        rows.append({"dataset": ds, "best_auc": best_value, "best_params_path": str(best_params_path)})
+        print(f"{ds}: best AUC {best_value}")
 
     ensure_dir(output_dir)
     pd.DataFrame(rows).to_csv(output_dir / f"run_summary_offset_{args.trial_offset}.csv", index=False)

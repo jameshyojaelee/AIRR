@@ -1,18 +1,16 @@
 """
 Approximate TCRdist-inspired kNN repertoire classifier using k-mer vectors.
 
-Represents each repertoire by 3-mer TF vectors and applies KNN with cosine
-similarity. This is a lightweight surrogate for full TCRdist.
+Applies kNN with cosine distance on an existing repertoire-level feature matrix
+(typically k-mer features). This is a lightweight surrogate for full TCRdist.
 """
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics.pairwise import cosine_distances
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import normalize
 
-from airrml.features import build_kmer_features, apply_kmer_features
 from airrml.models import register_model
 from airrml.models.base import BaseRepertoireModel
 
@@ -24,7 +22,7 @@ class TCRdistKNNModel(BaseRepertoireModel):
         self.k_neighbors = k_neighbors
         self.kmer_k = kmer_k
         self.knn_: Optional[KNeighborsClassifier] = None
-        self.feature_names_: Optional[pd.Index] = None
+        self.feature_names_: Optional[list[str]] = None
 
     def fit(
         self,
@@ -33,19 +31,15 @@ class TCRdistKNNModel(BaseRepertoireModel):
         X_val: Optional[pd.DataFrame] = None,
         y_val: Optional[pd.Series] = None,
     ) -> "TCRdistKNNModel":
-        X_kmer, _, kmer_info = build_kmer_features(X_train, k=self.kmer_k)
-        X_norm = normalize(X_kmer, norm="l2")
-        self.feature_info = {"kmer": kmer_info}
-        self.feature_names_ = X_norm.columns
-        dist_metric = "cosine"
-        self.knn_ = KNeighborsClassifier(n_neighbors=self.k_neighbors, metric=dist_metric, weights="distance")
-        self.knn_.fit(X_norm, y_train.loc[X_kmer.index])
+        self.feature_names_ = list(X_train.columns)
+        X_norm = normalize(X_train, norm="l2")
+        self.knn_ = KNeighborsClassifier(n_neighbors=self.k_neighbors, metric="cosine", weights="distance")
+        self.knn_.fit(X_norm, y_train.loc[X_train.index])
         return self
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        if self.knn_ is None or self.feature_info is None:
+        if self.knn_ is None or self.feature_names_ is None:
             raise RuntimeError("Model has not been fitted.")
-        X_kmer = apply_kmer_features(X, self.feature_info["kmer"])
-        X_kmer = X_kmer.reindex(columns=self.feature_names_, fill_value=0)
-        X_norm = normalize(X_kmer, norm="l2")
+        X_aligned = X.reindex(columns=self.feature_names_, fill_value=0)
+        X_norm = normalize(X_aligned, norm="l2")
         return self.knn_.predict_proba(X_norm)[:, 1]

@@ -44,34 +44,56 @@ def _load_model_artifacts(model_dir: Path, model_name: str):
     elif model_pt.exists():
         if torch is None:
             raise ImportError("PyTorch is required to load deep models saved as .pt")
-        params = {}
+        params: Dict[str, Any] = {}
         if model_params_path.exists():
             with model_params_path.open("r") as f:
                 params = json.load(f)
+        # Fill missing deep hyperparams from feature_info (preferred, since it's written after training).
+        if feature_info and isinstance(feature_info, dict):
+            for key in ("model_dim", "num_heads", "num_layers", "ff_dim", "dropout", "max_len", "max_sequences_per_rep"):
+                if key in feature_info and (key not in params or params.get(key) is None):
+                    params[key] = feature_info[key]
+
+        target_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Prefer constructing the model directly on the target device for speed.
+        params = dict(params)
+        params.setdefault("device", str(target_device))
         model = get_model(model_name, **params)
+        model.device = target_device  # type: ignore[attr-defined]
 
         # Rebuild network using saved vocab sizes if available
         if feature_info and isinstance(feature_info, dict):
             gene_vocabs = feature_info.get("gene_vocabs", {}) or {}
-            max_len = feature_info.get("max_len", getattr(model, "max_len", None))
             if hasattr(model, "_build_gene_vocabs") and gene_vocabs:
                 model.gene_vocabs_ = gene_vocabs
-            if getattr(model, "model_", None) is None:
-                try:
-                    from airrml.models.deep_mil import DeepMILNet
+            if "max_len" in feature_info and hasattr(model, "max_len"):
+                model.max_len = feature_info["max_len"]
 
-                    gene_vocab_sizes = {k: len(v) for k, v in getattr(model, "gene_vocabs_", {}).items()}
-                    model.model_ = DeepMILNet(
-                        params.get("aa_dim", getattr(model, "aa_dim", 64)),
-                        gene_vocab_sizes,
-                        params.get("gene_dims", getattr(model, "gene_dims", {"v": 16, "j": 8})),
-                        params.get("hidden_dim", getattr(model, "hidden_dim", 256)),
-                        params.get("classifier_dim", getattr(model, "classifier_dim", 128)),
-                    ).to(getattr(model, "device", "cpu"))
-                    model.max_len = max_len if max_len is not None else getattr(model, "max_len", 40)
-                except Exception:
-                    pass
-        state = torch.load(model_pt, map_location="cpu")
+        if getattr(model, "model_", None) is None:
+            from airrml.models.deep_mil import DeepMILNet
+
+            gene_vocab_sizes = {k: len(v) for k, v in getattr(model, "gene_vocabs_", {}).items()}
+            model_dim = int(getattr(model, "model_dim", params.get("model_dim", 256)))
+            num_heads = int(getattr(model, "num_heads", params.get("num_heads", 8)))
+            num_layers = int(getattr(model, "num_layers", params.get("num_layers", 4)))
+            ff_dim = int(getattr(model, "ff_dim", params.get("ff_dim", model_dim * 4)))
+            dropout = float(getattr(model, "dropout", params.get("dropout", 0.1)))
+            max_len = int(getattr(model, "max_len", params.get("max_len", 60)))
+            gene_dims = params.get("gene_dims", getattr(model, "gene_dims", {"v": 16, "j": 8}))
+            classifier_dim = int(params.get("classifier_dim", getattr(model, "classifier_dim", 128)))
+
+            model.model_ = DeepMILNet(
+                model_dim=model_dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                ff_dim=ff_dim,
+                dropout=dropout,
+                max_len=max_len,
+                gene_vocab_sizes=gene_vocab_sizes,
+                gene_dims=gene_dims,
+                classifier_dim=classifier_dim,
+            ).to(target_device)
+        state = torch.load(model_pt, map_location=target_device)
         if getattr(model, "model_", None) is None:
             raise RuntimeError("Deep model architecture was not initialized before loading state dict.")
         model.model_.load_state_dict(state)
@@ -129,7 +151,8 @@ def build_sequence_importance(
     # Deduplicate sequences and cap to avoid OOM
     seq_cols = ["junction_aa", "v_call", "j_call"]
     unique_seqs = train_sequences_df[seq_cols].drop_duplicates()
-    max_seqs = max(top_k * 5, top_k)
+    is_deep = hasattr(model, "model_") and model.__class__.__name__.lower().startswith("deep")
+    max_seqs = top_k if is_deep else max(top_k * 5, top_k)
     if len(unique_seqs) > max_seqs:
         unique_seqs = unique_seqs.head(max_seqs)
 
