@@ -159,8 +159,9 @@ def train_contrastive(
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, num_epochs))
 
-    for _ in range(num_epochs):
+    for epoch in range(num_epochs):
         model.train()
+        epoch_losses = []
         for batch in loader:
             z1 = model(batch["view1"])
             z2 = model(batch["view2"])
@@ -168,7 +169,10 @@ def train_contrastive(
             opt.zero_grad()
             loss.backward()
             opt.step()
+            epoch_losses.append(loss.item())
         scheduler.step()
+        avg_loss = sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0.0
+        print(f"[Epoch {epoch+1}/{num_epochs}] Loss: {avg_loss:.4f}")
 
     return model.state_dict()
 

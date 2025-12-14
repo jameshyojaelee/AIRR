@@ -531,6 +531,7 @@ class DeepMILModel(BaseRepertoireModel):
                         loss = criterion(logits, batch["labels"].to(self.device))
                         val_losses.append(loss.item())
                 avg_val = np.mean(val_losses) if val_losses else float("inf")
+                print(f"[Epoch {epoch+1}] Val Loss: {avg_val:.4f}")
                 if avg_val < best_val_loss:
                     best_val_loss = avg_val
                     best_state = self.model_.state_dict()

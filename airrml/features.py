@@ -236,6 +236,57 @@ def apply_vj_features(sequences_df: pd.DataFrame, feature_info: Dict[str, Any]) 
     X_aligned = X_aligned.reindex(columns=vocab)
     return X_aligned
 
+def build_publicness_features(
+    sequences_df: pd.DataFrame,
+    existing_info: Optional[Dict[str, Any]] = None,
+    sequence_col: str = "junction_aa",
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Compute sequence publicness statistics (prevalence across repertoires).
+    """
+    if "ID" not in sequences_df.columns:
+        raise ValueError("sequences_df must contain an 'ID' column for repertoire grouping")
+
+    # In fit mode (existing_info=None): compute prevalence from current data
+    if existing_info is None:
+        valid = sequences_df.dropna(subset=["ID", sequence_col])
+        # Count unique repertoires per sequence
+        unique_pairs = valid[["ID", sequence_col]].drop_duplicates()
+        counts = unique_pairs[sequence_col].value_counts()
+        prevalence_map = counts.to_dict()
+        feature_info = {"prevalence_map": prevalence_map}
+    else:
+        feature_info = existing_info
+        prevalence_map = feature_info.get("prevalence_map", {})
+
+    # Map prevalence to sequences
+    # We work on a subset to save memory/time
+    df = sequences_df[["ID", sequence_col]].copy()
+    df[sequence_col] = df[sequence_col].fillna("").astype(str)
+    # Default prevalence 0 if not in map (for new sequences in test time)
+    # Optim: map is potentially large, use map or merge?
+    # Merge is often faster for large DF
+    prev_series = pd.Series(prevalence_map, name="prevalence")
+    df = df.merge(prev_series, left_on=sequence_col, right_index=True, how="left")
+    df["prevalence"] = df["prevalence"].fillna(0).astype(float)
+
+    # Aggregate per repertoire
+    # Features: mean, median, max, fraction > 1 (public)
+    agg = df.groupby("ID")["prevalence"].agg(
+        pub_mean="mean",
+        pub_median="median",
+        pub_max="max",
+        pub_std="std",
+        pub_prop=lambda x: (x > 1).mean()
+    ).fillna(0)
+    
+    agg.index.name = "ID"
+    # Ensure columns order
+    cols = ["pub_mean", "pub_median", "pub_max", "pub_std", "pub_prop"]
+    agg = agg.reindex(columns=cols, fill_value=0)
+    
+    return agg, feature_info
+
 
 def build_combined_feature_matrix(
     sequences_df: pd.DataFrame,
@@ -251,9 +302,10 @@ def build_combined_feature_matrix(
     use_vj = config_dict.get("use_vj", False)
     use_length = config_dict.get("use_length", False)
     use_tcrdist = config_dict.get("use_tcrdist_nystrom", False)
+    use_publicness = config_dict.get("use_publicness", False)
     sequence_col = config_dict.get("sequence_col", config.SEQUENCE_COLS[0])
-    if not use_kmers and not use_vj and not use_length and not use_tcrdist:
-        raise ValueError("At least one feature type must be enabled (k-mers, VJ usage, length stats, or tcrdist)")
+    if not any([use_kmers, use_vj, use_length, use_tcrdist, use_publicness]):
+        raise ValueError("At least one feature type must be enabled")
 
     feature_info = feature_info or {}
     new_feature_info: Dict[str, Any] = dict(feature_info)
@@ -314,6 +366,11 @@ def build_combined_feature_matrix(
         X_len, len_info = build_length_features(sequences_df, feature_info.get("length"))
         new_feature_info["length"] = len_info
         feature_blocks.append(X_len)
+
+    if use_publicness:
+        X_pub, pub_info = build_publicness_features(sequences_df, feature_info.get("publicness"), sequence_col=sequence_col)
+        new_feature_info["publicness"] = pub_info
+        feature_blocks.append(X_pub)
 
     X = pd.concat(feature_blocks, axis=1) if feature_blocks else pd.DataFrame()
 

@@ -1,0 +1,33 @@
+{
+    "train_root": "train_datasets",
+    "test_root": "test_datasets/test_datasets",
+    "output_root": "outputs/gbm_publicness_v1",
+    "model_name": "gbm",
+    "feature_config": {
+        "use_kmers": true,
+        "k_list": [
+            3,
+            4,
+            5
+        ],
+        "tfidf": true,
+        "hashing": false,
+        "use_vj": true,
+        "use_length": true,
+        "use_publicness": true,
+        "sequence_col": "junction_aa"
+    },
+    "training": {
+        "cv_folds": 5,
+        "random_state": 42,
+        "top_k_sequences": 50000
+    },
+    "model_params": {
+        "learning_rate": 0.05,
+        "n_estimators": 600,
+        "max_depth": 6,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "use_gpu": false
+    }
+}
