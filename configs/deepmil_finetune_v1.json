@@ -1,0 +1,35 @@
+{
+    "train_root": "train_datasets",
+    "test_root": "test_datasets/test_datasets",
+    "output_root": "outputs/deepmil_finetune_v1",
+    "model_name": "deep_mil",
+    "model_params": {
+        "model_dim": 512,
+        "num_heads": 8,
+        "num_layers": 6,
+        "ff_dim": 2048,
+        "dropout": 0.15,
+        "gene_dims": {
+            "v": 16,
+            "j": 8
+        },
+        "classifier_dim": 256,
+        "max_len": 72,
+        "batch_size": 8,
+        "num_epochs": 15,
+        "lr": 0.0003,
+        "weight_decay": 0.0001,
+        "max_sequences_per_rep": 1500,
+        "pretrained_encoder_path": "outputs/contrastive/encoder_v1.pt",
+        "freeze_encoder": false,
+        "aug_dropout": 0.05,
+        "aug_mask": 0.05
+    },
+    "feature_config": {
+        "use_kmers": false
+    },
+    "training": {
+        "cv_folds": 0,
+        "random_state": 42
+    }
+}

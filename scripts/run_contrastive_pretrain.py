@@ -57,6 +57,7 @@ def main() -> None:
 
     if not seqs:
         raise ValueError("No sequences found for contrastive pretraining.")
+    print(f"Loaded {len(seqs)} sequences for pretraining.")
 
     state = train_contrastive(
         sequences=seqs,

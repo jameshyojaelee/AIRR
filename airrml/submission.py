@@ -148,6 +148,19 @@ def build_sequence_importance(
     """
     Build sequence-level rows using model-provided importance scores.
     """
+    # Fast path for models that precompute a full ranked list during fit (e.g., enrichment).
+    precomputed = getattr(model, "sequence_stats_", None)
+    if isinstance(precomputed, pd.DataFrame) and not precomputed.empty and "importance_score" in precomputed.columns:
+        cols = ["junction_aa", "v_call", "j_call", "importance_score"]
+        if all(c in precomputed.columns for c in cols):
+            candidates = precomputed[cols].copy()
+            candidates = candidates.sort_values("importance_score", ascending=False)
+            # Dedup is O(n); only consider a reasonable candidate pool.
+            max_candidates = max(top_k * 5, top_k)
+            candidates = candidates.head(max_candidates)
+            candidates = seq_importance.select_top_sequences(candidates, top_k=top_k)
+            return seq_importance.format_sequence_rows(candidates, dataset_name)
+
     # Deduplicate sequences and cap to avoid OOM
     seq_cols = ["junction_aa", "v_call", "j_call"]
     unique_seqs = train_sequences_df[seq_cols].drop_duplicates()

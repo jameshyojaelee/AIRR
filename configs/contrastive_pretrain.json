@@ -1,5 +1,5 @@
 {
-  "train_root": "train_datasets/train_datasets",
+  "train_root": "train_datasets",
   "datasets": [],
   "output_path": "outputs/contrastive/encoder_v1.pt",
   "model": {
