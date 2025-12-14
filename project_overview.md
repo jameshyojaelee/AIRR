@@ -126,31 +126,136 @@ Our solution is built on a modular Python package `airrml` with a clear separati
 
 ## 9. Current Status & Roadmap
 
-### 9.1 Status (as of Dec 13, 2025)
+### 9.1 Status (as of Dec 14, 2025)
 -   **Implemented**:
-    -   Full pipeline for loading data, training, and generating submissions.
-    -   `DeepMILModel` with PyTorch.
-    -   `KmerLogReg` baseline.
-    -   HPO via Optuna.
+    -   End-to-end pipeline for training and Kaggle submission generation.
+    -   `deep_mil`: Transformer MIL (configurable depth/heads/dropout) + AMP/grad clipping/early-stop; supports attention-based sequence importance and gradient-assisted scoring.
+    -   `kmer_logreg`: k-mer + logistic regression (L1/L2).
+    -   `gbm`: Gradient boosting backend (XGBoost/LightGBM/sklearn fallback).
+    -   Multi-k TF–IDF features + optional hashing for tabular models.
+    -   Contrastive pretraining scaffold (`scripts/run_contrastive_pretrain.py`) to pretrain an encoder and fine-tune DeepMIL.
+    -   HPO via Optuna (both per-model and unified sweep harness) + Slurm array launchers.
+    -   Submission assembly from existing DeepMIL artifacts (`scripts/submit_assemble_deepmil_outputs.sh`).
+    -   Stacking ensemble scaffold + calibration, and a lightweight similarity model (`tcrdist_knn`) as an additional diversity source.
 -   **Verified**:
-    -   Data loading and encoding.
-    -   Baseline model runs.
+    -   Data loading and dataset discovery.
+    -   DeepMIL submissions can be assembled successfully from saved artifacts.
+    -   Optuna HPO produces per-dataset trial logs and best params.
 
-### 9.2 Tasks & Roadmap (Dec 13 - Dec 17)
+### 9.2 Reality Check: What “90%+” Actually Means
+The leaderboard score is a weighted blend of:
+-   **Task 1 AUC** (repertoire prediction)
+-   **Task 2 Jaccard** (sequence set recovery)
+aggregated across multiple datasets.
 
-#### Phase 1: Validation & Tuning (Immediate)
--   [ ] **Verify Deep MIL Performance**: Run `scripts/run_loco.py` with `configs/deepmil_transformer.json` to get a reliable CV AUC estimate.
--   [ ] **Hyperparameter Tuning**: Run `tune_optuna.py` for Deep MIL to optimize model dimension, heads, and dropout.
--   [ ] **Sequence Ranking Check**: Verify that `get_sequence_importance` in `DeepMILModel` produces reasonable outputs (Jaccard proxy).
+Reaching **0.90+ overall** is only plausible if we can do *both*:
+1) near-perfect AUC on most datasets, and  
+2) strong Task 2 sequence recovery (Jaccard) on most datasets.
 
-#### Phase 2: Scaling & Ensembling
--   [ ] **Full Training**: Execute `train_all_datasets.py` on GPU nodes for final model candidates.
--   [ ] **Ensemble Strategy**: Combine predictions from `kmer_logreg` (linear) and `deep_mil` (non-linear).
-    -   *Plan*: Average probabilities for Task 1. Merge sequence lists for Task 2 (e.g., take top 25k from each).
+This requires a plan that is **Task-2-first** (sequence discovery), not only a model tuning plan for AUC.
 
-#### Phase 3: Submission
--   [ ] **Generate Submission**: Use `scripts/submit_assemble_deepmil_outputs.sh` or `generate_submission` in `pipeline.py`.
--   [ ] **Upload to Kaggle**.
+### 9.3 Strategy to Maximize Score (High-Level)
+We will pursue three complementary “engines”, then blend them per dataset:
+
+1) **Sequence enrichment engine (highest leverage for Task 2)**  
+   A dedicated statistical enrichment method that directly ranks sequences by label association (e.g., Fisher exact / log-odds with priors), plus a repertoire scoring rule built from the same enriched sequences.
+   -   This often dominates when datasets contain synthetic spikes or antigen-specific motifs.
+   -   Produces high-quality ranked lists for Task 2 and strong Task 1 signals.
+
+2) **DeepMIL engine (non-linear motif learning)**  
+   Transformer MIL with aggressive scaling (sweeps over depth/heads, length, subsampling, augmentations, contrastive pretrain).
+   -   Valuable for datasets with distributed signals not captured by simple enrichment.
+
+3) **Tabular engine (robust baseline + calibration)**  
+   Multi-k TF–IDF + logreg, tuned GBM, plus lightweight similarity models.
+   -   Often provides strong “publicness” features and stable generalization.
+
+Final submissions should be a **per-dataset calibrated blend** of these engines for Task 1, and a **rank-aggregation blend** for Task 2.
+
+### 9.4 Execution Plan (Dec 14 – Dec 17)
+This is the practical plan to *attempt* 0.90+ with HPC scale and a 5-submissions/day constraint.
+
+#### Phase 0 — Measurement, Guardrails, and Submission Budget (Today, <3 hours)
+-   [ ] Establish a single “experiment ledger” (CSV/SQLite) with: config hash, git hash, dataset, CV AUC, runtime, produced submission path, Kaggle score.
+-   [ ] Decide a submission budget: **2 exploratory submissions/day**, **3 confirmatory submissions/day**.
+-   [ ] Define “must-pass” checks before a Kaggle submission:
+    -   Submission file schema + row counts
+    -   No NaNs, no missing columns
+    -   Deterministic rerun on toy data
+
+#### Phase 1 — Build the Sequence Enrichment Engine (Today → Tomorrow)
+Goal: make Task 2 competitive and convert it into Task 1 features.
+
+Deliverables:
+-   New model `airrml/models/enrichment.py` (or similar) that outputs:
+    -   `sequence_importance` ranked list (junction_aa, v_call, j_call, score)
+    -   repertoire prediction probabilities based on enriched-sequence evidence
+-   New config(s) + Slurm script to run it across all datasets.
+
+Method outline:
+-   For each dataset:
+    1) Create a binary presence/absence table for unique (junction_aa, v_call, j_call).
+    2) Compute enrichment per sequence:
+       - Fisher exact or log-odds ratio with pseudocount (empirical Bayes prior).
+       - Use effect size + p-value shrinkage (avoid over-ranking ultra-rare sequences).
+    3) Rank sequences by a combined score, e.g.:
+       - `score = signed_log_odds * sqrt(min(pos_count, neg_count))` or a similar stabilized statistic.
+    4) Task 2 list: top 50k after dedup + near-duplicate collapse.
+    5) Task 1 repertoire score:
+       - Sum top-N enriched sequence indicators (or weighted counts),
+       - then calibrate via logistic regression on training repertoires.
+
+Quality controls (important):
+-   Verify stability of the ranked list across CV folds (proxy for Jaccard robustness):
+    -   Compute fold-to-fold Jaccard of top-10k lists (we don’t know ground truth, but stability matters).
+    -   Prefer models with high stability *and* good AUC.
+
+#### Phase 2 — DeepMIL Scaling With Contrastive Pretraining (Tomorrow)
+Goal: pick 1–2 DeepMIL configurations that consistently help across datasets.
+
+Work items:
+-   [ ] Contrastive pretrain on pooled sequences (all datasets), save encoder, fine-tune per dataset.
+-   [ ] Increase capacity: max_len 60–90, model_dim 384–768, 4–8 layers, dropout 0.1–0.3.
+-   [ ] Add heavy augmentation toggles per dataset (drop/mask/shuffle) and subsampling sweeps.
+-   [ ] Run LOCO validation for generalization estimation (Task 1).
+-   [ ] For Task 2: use fold/seed consensus ranking:
+    -   Train multiple seeds, export per-seed ranked lists, aggregate ranks (reciprocal-rank fusion).
+
+#### Phase 3 — Tabular Scaling + Publicness Controls (Tomorrow → Next Day)
+Goal: create strong, stable signals and good calibration to blend with deep models.
+
+Work items:
+-   [ ] Multi-k TF–IDF (k=3–6) + L2 logreg + calibration.
+-   [ ] GBM tuned per dataset; include V/J usage and length stats.
+-   [ ] Add “publicness” features:
+    -   Per sequence: frequency across repertoires (not just counts within repertoire).
+    -   Downweight overly public sequences (common across both labels).
+
+#### Phase 4 — Ensembling & Post-processing (Next Day)
+Goal: combine engines intelligently rather than averaging.
+
+Task 1:
+-   [ ] Per-dataset stacking/blending:
+    -   OOF predictions for each engine (enrichment, deep, tabular).
+    -   Train a blender (logistic regression) per dataset.
+    -   Calibrate final probabilities (isotonic/sigmoid) per dataset.
+
+Task 2:
+-   [ ] Rank aggregation (per dataset):
+    -   Combine enriched list + DeepMIL list + k-mer list using reciprocal-rank fusion.
+    -   Enforce uniqueness, collapse near-duplicates, and ensure top portion is high-confidence.
+
+#### Phase 5 — Kaggle Submission Protocol (Daily until deadline)
+Because we only get 5 submissions/day:
+-   Submit only after passing Phase 0 checks.
+-   Use a strict naming scheme: include git hash + timestamp + method tag in submission filename.
+-   After each submission, update the ledger with Kaggle score and notes; do not repeat identical configs.
+
+### 9.5 Definition of “Success”
+We consider the approach on track if we see:
+-   Strong per-dataset AUC on many datasets (ideally >0.80 on most),
+-   High stability of Task 2 lists across folds/seeds,
+-   Clear uplift from enrichment engine and from blending (vs. any single model).
 
 ---
 

@@ -80,8 +80,9 @@ def cross_validate_model(
         raise ValueError(f"label_df must contain column '{config.LABEL_COL}'")
     y_full = labels[config.LABEL_COL].astype(int)
 
-    # Handle deep model separately (operates on sequences directly)
-    if model_name == "deep_mil":
+    # Handle sequence-consuming models separately (operate on sequences directly)
+    probe_model = get_model(model_name, random_state=random_state, **(model_params or {}))
+    if getattr(probe_model, "consumes_sequences", False):
         skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
         for train_idx, val_idx in skf.split(np.zeros(len(y_full)), y_full):
             train_ids = y_full.index[train_idx]

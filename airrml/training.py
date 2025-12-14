@@ -75,7 +75,7 @@ def train_on_dataset(
     model = get_model(model_name, random_state=random_state, **model_params)
     feature_info: Optional[Dict[str, Any]] = None
 
-    if model_name == "deep_mil":
+    if getattr(model, "consumes_sequences", False):
         labels = metadata_df.set_index("ID")[config.LABEL_COL]
         model.fit(sequences_df, labels)
         feature_info = getattr(model, "feature_info", None)

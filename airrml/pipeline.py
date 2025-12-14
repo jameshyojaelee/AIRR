@@ -119,7 +119,7 @@ def cross_validate_across_datasets(
 
         # Fit on training portion and evaluate on hold-out once
         model = get_model(model_name, random_state=random_state, **model_params)
-        if model_name == "deep_mil":
+        if getattr(model, "consumes_sequences", False):
             labels = train_label_df.set_index("ID")[config.LABEL_COL]
             model.fit(train_seq_df, labels)
             holdout_probs = model.predict_proba(holdout_seq_df)
@@ -158,7 +158,7 @@ def predict_on_test_dataset(
     model = get_model(model_name, random_state=random_state, **model_params)
     feature_info: Optional[Dict] = None
 
-    if model_name == "deep_mil":
+    if getattr(model, "consumes_sequences", False):
         labels = metadata_df.set_index("ID")[config.LABEL_COL]
         model.fit(sequences_df, labels)
         feature_info = getattr(model, "feature_info", None)

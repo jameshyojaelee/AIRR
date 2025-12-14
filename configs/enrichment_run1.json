@@ -1,0 +1,26 @@
+{
+  "train_root": "/gpfs/commons/home/jameslee/AIRR/train_datasets",
+  "test_root": "/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets",
+  "output_root": "outputs/enrichment_run1",
+  "model_name": "enrichment",
+  "model_params": {
+    "alpha": 0.5,
+    "min_total_presence": 2,
+    "min_pos_presence": 1,
+    "positive_only": true,
+    "top_k_model_seqs": 20000,
+    "max_sequences_per_rep": null,
+    "class_weight": "balanced"
+  },
+  "feature_config": {
+    "use_kmers": false
+  },
+  "training": {
+    "cv_folds": 5,
+    "random_state": 123
+  },
+  "submission": {
+    "top_k_sequences": 50000,
+    "submission_path": "outputs/enrichment_run1/submission.csv"
+  }
+}

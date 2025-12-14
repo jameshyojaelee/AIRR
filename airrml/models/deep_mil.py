@@ -304,6 +304,7 @@ class DeepMILModel(BaseRepertoireModel):
     """
     Attention-based MIL model operating on variable-length sets of sequences per repertoire.
     """
+    consumes_sequences: bool = True
 
     def __init__(
         self,

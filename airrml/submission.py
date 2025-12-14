@@ -113,8 +113,8 @@ def build_repertoire_predictions(
     """
     Build repertoire-level prediction rows for a single test dataset.
     """
-    # Deep model consumes sequences directly
-    if hasattr(model, "model_") and model.__class__.__name__.lower().startswith("deep"):
+    # Sequence-consuming models consume sequences directly
+    if getattr(model, "consumes_sequences", False):
         probs = model.predict_proba(test_sequences_df)
     else:
         feature_info = feature_info or {}

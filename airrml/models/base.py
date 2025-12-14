@@ -20,6 +20,7 @@ class BaseRepertoireModel(ABC):
     The interface is intentionally minimal and agnostic to the underlying
     modeling approach (logistic regression, gradient boosting, deep MIL, etc.).
     """
+    consumes_sequences: bool = False
 
     def __init__(self, **kwargs: Any) -> None:
         self.name: str = self.__class__.__name__
