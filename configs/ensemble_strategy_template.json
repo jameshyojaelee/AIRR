@@ -1,0 +1,28 @@
+{
+  "_notes": {
+    "sources": "Indices refer to the order passed in `--submissions` (0-based).",
+    "task1": "Applied to test datasets mapped by prefix `test_dataset_<k>` -> `train_dataset_<k>`.",
+    "fallback": "If a train_dataset_* key is missing, global weights are used."
+  },
+  "task1": {
+    "train_dataset_1": { "sources": [0], "weights": [1.0] },
+    "train_dataset_2": { "sources": [0], "weights": [1.0] },
+    "train_dataset_3": { "sources": [0], "weights": [1.0] },
+    "train_dataset_4": { "sources": [0], "weights": [1.0] },
+    "train_dataset_5": { "sources": [0], "weights": [1.0] },
+    "train_dataset_6": { "sources": [0], "weights": [1.0] },
+    "train_dataset_7": { "sources": [0], "weights": [1.0] },
+    "train_dataset_8": { "sources": [0], "weights": [1.0] }
+  },
+  "task2": {
+    "train_dataset_1": { "sources": [1], "weights": [1.0] },
+    "train_dataset_2": { "sources": [1], "weights": [1.0] },
+    "train_dataset_3": { "sources": [1], "weights": [1.0] },
+    "train_dataset_4": { "sources": [1], "weights": [1.0] },
+    "train_dataset_5": { "sources": [1], "weights": [1.0] },
+    "train_dataset_6": { "sources": [1], "weights": [1.0] },
+    "train_dataset_7": { "sources": [1], "weights": [1.0] },
+    "train_dataset_8": { "sources": [1], "weights": [1.0] }
+  }
+}
+

@@ -28,3 +28,4 @@ outputs/
 *.tsv
 
 prompts.md
+CHAT_PROGRESS.md
