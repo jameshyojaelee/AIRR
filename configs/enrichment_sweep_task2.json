@@ -1,0 +1,24 @@
+{
+  "train_root": "/gpfs/commons/home/jameslee/AIRR/train_datasets",
+  "test_root": "/gpfs/commons/home/jameslee/AIRR/test_datasets/test_datasets",
+  "output_dir": "outputs/enrichment_sweep_task2",
+  "datasets": [],
+  "cv_folds": 5,
+  "random_state": 123,
+  "n_trials": 10,
+  "timeout": null,
+  "top_n_stability": 10000,
+  "stability_weight": 1.0,
+  "auc_weight": 0.25,
+  "max_repertoires": null,
+  "search_space": {
+    "alpha": { "type": "loguniform", "low": 0.05, "high": 2.0 },
+    "min_total_presence": { "type": "int", "low": 1, "high": 6 },
+    "min_pos_presence": { "type": "int", "low": 0, "high": 3 },
+    "positive_only": { "type": "categorical", "choices": [true, false] },
+    "top_k_model_seqs": { "type": "categorical", "choices": [5000, 10000, 20000, 40000] },
+    "max_sequences_per_rep": { "type": "categorical", "choices": [null, 500, 1000, 1500] },
+    "class_weight": { "type": "categorical", "choices": ["balanced", null] }
+  }
+}
+
