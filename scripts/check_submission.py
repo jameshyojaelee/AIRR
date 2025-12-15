@@ -58,7 +58,8 @@ def main() -> int:
         _fail(f"submission not found: {args.submission}")
         return 1
 
-    df = pd.read_csv(args.submission)
+    # Treat blank fields as empty strings, not NaN (submission schema expects blanks for sequence cols on repertoire rows).
+    df = pd.read_csv(args.submission, keep_default_na=False)
 
     # Schema
     cols = list(df.columns)

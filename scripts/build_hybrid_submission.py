@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _read_submission(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, keep_default_na=False)
     if list(df.columns) != config.SUBMISSION_COLUMNS:
         raise ValueError(f"columns mismatch in {path}. Got {list(df.columns)} expected {config.SUBMISSION_COLUMNS}")
     return df
@@ -85,4 +85,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

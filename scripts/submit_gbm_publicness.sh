@@ -8,8 +8,8 @@
 #SBATCH --job-name=airrml-gbm-pub
 #SBATCH --partition=cpu
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=64G
-#SBATCH --time=12:00:00
+#SBATCH --mem=256G
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/%x-%j.out
 
 set -euo pipefail

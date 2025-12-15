@@ -155,10 +155,9 @@ def build_sequence_importance(
         if all(c in precomputed.columns for c in cols):
             candidates = precomputed[cols].copy()
             candidates = candidates.sort_values("importance_score", ascending=False)
-            # Dedup is O(n); only consider a reasonable candidate pool.
-            max_candidates = max(top_k * 5, top_k)
-            candidates = candidates.head(max_candidates)
-            candidates = seq_importance.select_top_sequences(candidates, top_k=top_k)
+            candidates = candidates.head(top_k)
+            # Near-duplicate collapsing is optional; keep exact top-k for speed.
+            candidates = seq_importance.select_top_sequences(candidates, top_k=top_k, dedup=False)
             return seq_importance.format_sequence_rows(candidates, dataset_name)
 
     # Deduplicate sequences and cap to avoid OOM
@@ -202,8 +201,20 @@ def assemble_submission(
         model_dir = model_output_root / dataset_name
         model, feature_info = _load_model_artifacts(model_dir, model_name)
 
-        # Load train and test data
-        train_seq_df, _ = data.load_full_dataset(info["train_path"])
+        # Load train data only if needed for Task 2 importance.
+        # Some models (e.g., enrichment) precompute a ranked list during fit.
+        needs_train_for_importance = True
+        precomputed = getattr(model, "sequence_stats_", None)
+        if isinstance(precomputed, pd.DataFrame) and not precomputed.empty and "importance_score" in precomputed.columns:
+            cols = ["junction_aa", "v_call", "j_call", "importance_score"]
+            if all(c in precomputed.columns for c in cols):
+                needs_train_for_importance = False
+
+        train_seq_df: pd.DataFrame
+        if needs_train_for_importance:
+            train_seq_df, _ = data.load_full_dataset(info["train_path"])
+        else:
+            train_seq_df = pd.DataFrame(columns=["junction_aa", "v_call", "j_call"])
 
         # Sequence importance (Task 2)
         try:
