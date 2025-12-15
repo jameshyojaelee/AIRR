@@ -253,6 +253,14 @@ def ensemble_task2(
             elif method == "borda":
                 max_rank = seq["rank"].max()
                 seq["score"] = _borda_score(seq["rank"], max_rank=pd.Series(max_rank, index=seq.index)) * float(w)
+            elif method == "quantile":
+                # Convert rank to quantile score (0.0 to 1.0)
+                # rank 1 (best) -> 1.0, rank N (worst) -> 0.0
+                n = len(seq)
+                if n > 1:
+                    seq["score"] = (1.0 - (seq["rank"] - 1.0) / (n - 1.0)) * float(w)
+                else:
+                    seq["score"] = 1.0 * float(w)
             else:
                 raise ValueError(f"Unsupported method: {method}")
             pieces.append(seq[["junction_aa", "v_call", "j_call", "score"]])
@@ -291,7 +299,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--submissions", nargs="+", type=Path, required=True, help="List of submission CSV paths")
     p.add_argument("--weights-task1", nargs="*", type=float, default=None, help="Weights for Task 1 ensembling (same length as submissions)")
     p.add_argument("--weights-task2", nargs="*", type=float, default=None, help="Weights for Task 2 ensembling (same length as submissions)")
-    p.add_argument("--task2-method", choices=["rrf", "borda"], default="rrf")
+    p.add_argument("--task2-method", choices=["rrf", "borda", "quantile"], default="rrf")
     p.add_argument("--rrf-k", type=int, default=60)
     p.add_argument("--top-k", type=int, default=50000, help="Top-K sequences per training dataset for Task 2")
     p.add_argument("--dedup-near", action="store_true", help="Collapse near-duplicate sequences (edit distance <=1)")
