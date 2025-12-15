@@ -39,8 +39,10 @@ Outputs are written under `outputs/<run>-<timestamp>-<cpu|gpu>/` (or `AIRR_OUTPU
 - Enrichment (CPU): `sbatch scripts/submit_enrichment_run.sh`
 - DeepMIL transformer (GPU array): `sbatch --array=0-2 scripts/submit_deepmil_transformer.sh`
 - Unified HPO (GPU array): `sbatch --array=0-4 scripts/submit_hpo_array.sh`
-- Contrastive pretraining (GPU): `sbatch scripts/submit_contrastive_pretrain.sh`
-- Enrichment Task‑2 sweep (CPU array): `sbatch --array=0-4 scripts/submit_enrichment_task2_sweep_array.sh`
+- Contrastive pretraining (GPU): `sbatch scripts/submit_contrastive_pretrain.sh` (84h time limit)
+- DeepMIL fine-tune (GPU): `sbatch scripts/submit_deepmil_finetune.sh` (84h time limit)
+- Bayesian Enrichment (CPU): `sbatch scripts/submit_enrichment_bayes.sh` (84h time limit)
+- GBM Publicness (CPU): `sbatch scripts/submit_gbm_publicness.sh` (84h time limit)
 
 Monitoring:
 - `python3 scripts/monitor_progress.py`
@@ -60,6 +62,8 @@ Models live under `airrml/models/` and are selected via `model_name` in configs.
   - k-mer features + logistic regression; can provide sequence importance via projection
 - `gbm` (tabular): `airrml/models/gradient_boosting.py`
   - Gradient boosting over engineered features
+- `enrichment_bayes` (sequence-consuming, Phase 5): `airrml/models/enrichment_bayes.py`
+  - Bayesian Beta-Binomial shrinkage for robust sequence scoring (replaces simple log-odds).
 - `stacked_ensemble`: `airrml/models/stacked_ensemble.py`
   - Simple ensemble wrapper (OOF stacking)
 - `tcrdist_knn`: `airrml/models/tcrdist_knn.py`
@@ -70,6 +74,7 @@ Models live under `airrml/models/` and are selected via `model_name` in configs.
 Implemented in `airrml/features.py`:
 - multi‑k TF–IDF (`k_list`) with optional hashing
 - V/J usage and length features
+- `GlobalSequencePublicness` (in `airrml/features.py`): Sequence prevalence features across all datasets.
 - optional “publicness” block (dataset-dependent; can be memory heavy on ds7/8)
 
 ## Submission building + must-pass validation
@@ -85,7 +90,8 @@ Hybrid submission (Task 1 from one model, Task 2 from another):
 
 Schema-correct ensemble (Task 1 weighted average + Task 2 rank aggregation):
 - `python3 scripts/ensemble_submissions.py --submissions s1.csv s2.csv ... --weights-task1 ... --weights-task2 ... --output outputs/<run>/submission.csv`
-- Task 2 methods: `--task2-method rrf|borda` (default `rrf`)
+- Task 2 methods: `--task2-method rrf|borda|quantile` (default `rrf`)
+  - `quantile`: Normalizes ranks to 0-1 scores before averaging (strongest method).
 - Optional per-dataset mixing: `--strategy configs/ensemble_strategy_template.json`
 
 Auto-ensemble latest successful runs under `outputs/`:

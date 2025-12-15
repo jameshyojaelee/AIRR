@@ -141,6 +141,9 @@ Our solution is built on a modular Python package `airrml` with a clear separati
     -   Data loading and dataset discovery.
     -   DeepMIL submissions can be assembled successfully from saved artifacts.
     -   Optuna HPO produces per-dataset trial logs and best params.
+    -   Ensembling: `scripts/ensemble_submissions.py` correctly blends Task 1 probabilities and aggregates Task 2 rankings (RRF/Borda/Quantile).
+    -   Bayesian Enrichment: `enrichment_bayes` model implemented with Beta-Binomial shrinkage.
+
 
 ### 9.2 Reality Check: What “90%+” Actually Means
 The leaderboard score is a weighted blend of:
@@ -245,7 +248,15 @@ Task 2:
     -   Combine enriched list + DeepMIL list + k-mer list using reciprocal-rank fusion.
     -   Enforce uniqueness, collapse near-duplicates, and ensure top portion is high-confidence.
 
-#### Phase 5 — Kaggle Submission Protocol (Daily until deadline)
+#### Phase 5 — Optimization & Refinement (Dec 15)
+Goal: robustness and fine-tuning.
+
+Work items:
+- [x] **Bayesian Enrichment**: Replace brittle log-odds filters with Beta-Binomial estimates (`airrml/models/enrichment_bayes.py`).
+- [ ] **Quantile Ensembling**: Normalize scores before aggregation to robustly combine statistical and deep-learning signals.
+- [ ] **Deep MIL Diversity**: Add attention orthogonality loss to prevent collapse to trivial sequences.
+
+#### Phase 6 — Kaggle Submission Protocol (Daily until deadline)
 Because we only get 5 submissions/day:
 -   Submit only after passing Phase 0 checks.
 -   Use a strict naming scheme: include git hash + timestamp + method tag in submission filename.
