@@ -1,0 +1,20 @@
+{
+    "train_root": "train_datasets",
+    "test_root": "test_datasets/test_datasets",
+    "output_root": "outputs/enrichment_bayes_v1",
+    "model_name": "enrichment_bayes",
+    "model_params": {
+        "prior_strength_pos": 10.0,
+        "prior_strength_neg": 20.0,
+        "min_total_presence": 1,
+        "top_k_model_seqs": 25000,
+        "class_weight": "balanced"
+    },
+    "training": {
+        "cv_folds": 5,
+        "random_state": 42
+    },
+    "submission": {
+        "top_k_sequences": 50000
+    }
+}

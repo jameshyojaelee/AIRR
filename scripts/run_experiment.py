@@ -20,6 +20,12 @@ import pandas as pd
 from airrml import config as default_config
 from airrml import training
 from airrml.submission import assemble_submission
+from airrml.models import register_model
+# Ensure enrichment_bayes is imported to trigger registration
+try:
+    from airrml.models import enrichment_bayes
+except ImportError:
+    pass
 from airrml.utils import ensure_dir
 
 
