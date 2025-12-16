@@ -339,7 +339,12 @@ class DeepMILModel(BaseRepertoireModel):
         ortho_loss_weight: float = 0.0,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        # Capture all arguments for robust saving
+        all_args = locals()
+        all_args.pop("self")
+        all_args.pop("__class__", None)
+        all_args.update(all_args.pop("kwargs", {}))
+        super().__init__(**all_args)
         if torch is None:
             raise ImportError("PyTorch is required for DeepMILModel.")
 

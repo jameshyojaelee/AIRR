@@ -107,31 +107,34 @@ def train_on_dataset(
             if torch is None or getattr(model, "model_", None) is None:
                 raise RuntimeError("PyTorch is required to save deep_mil models.")
             torch.save(model.model_.state_dict(), model_path)
-            deep_params = {
-                "model_dim": getattr(model, "model_dim", None),
-                "num_heads": getattr(model, "num_heads", None),
-                "num_layers": getattr(model, "num_layers", None),
-                "ff_dim": getattr(model, "ff_dim", None),
-                "dropout": getattr(model, "dropout", None),
-                "gene_dims": getattr(model, "gene_dims", None),
-                "classifier_dim": getattr(model, "classifier_dim", None),
-                "max_len": getattr(model, "max_len", None),
-                "batch_size": getattr(model, "batch_size", None),
-                "num_epochs": getattr(model, "num_epochs", None),
-                "lr": getattr(model, "lr", None),
-                "weight_decay": getattr(model, "weight_decay", None),
-                "max_sequences_per_rep": getattr(model, "max_sequences_per_rep", None),
-                "pretrained_encoder_path": getattr(model, "pretrained_encoder_path", None),
-                "freeze_encoder": getattr(model, "freeze_encoder", None),
-                "aug_dropout": getattr(model, "aug_dropout", None),
-                "aug_mask": getattr(model, "aug_mask", None),
-                "aug_shuffle_max": getattr(model, "aug_shuffle_max", None),
-                "class_balance_sequences": getattr(model, "class_balance_sequences", None),
-                "use_amp": getattr(model, "use_amp", None),
-                "grad_clip": getattr(model, "grad_clip", None),
-                "early_stop_patience": getattr(model, "early_stop_patience", None),
-                "device": str(getattr(model, "device", "")),
-            }
+            if hasattr(model, "config") and model.config:
+                deep_params = dict(model.config)
+            else:
+                 deep_params = {
+                    "model_dim": getattr(model, "model_dim", None),
+                    "num_heads": getattr(model, "num_heads", None),
+                    "num_layers": getattr(model, "num_layers", None),
+                    "ff_dim": getattr(model, "ff_dim", None),
+                    "dropout": getattr(model, "dropout", None),
+                    "gene_dims": getattr(model, "gene_dims", None),
+                    "classifier_dim": getattr(model, "classifier_dim", None),
+                    "max_len": getattr(model, "max_len", None),
+                    "batch_size": getattr(model, "batch_size", None),
+                    "num_epochs": getattr(model, "num_epochs", None),
+                    "lr": getattr(model, "lr", None),
+                    "weight_decay": getattr(model, "weight_decay", None),
+                    "max_sequences_per_rep": getattr(model, "max_sequences_per_rep", None),
+                    "pretrained_encoder_path": getattr(model, "pretrained_encoder_path", None),
+                    "freeze_encoder": getattr(model, "freeze_encoder", None),
+                    "aug_dropout": getattr(model, "aug_dropout", None),
+                    "aug_mask": getattr(model, "aug_mask", None),
+                    "aug_shuffle_max": getattr(model, "aug_shuffle_max", None),
+                    "class_balance_sequences": getattr(model, "class_balance_sequences", None),
+                    "use_amp": getattr(model, "use_amp", None),
+                    "grad_clip": getattr(model, "grad_clip", None),
+                    "early_stop_patience": getattr(model, "early_stop_patience", None),
+                    "device": str(getattr(model, "device", "")),
+                }
             # Backward-compatible aliases
             deep_params["aa_dim"] = deep_params.get("model_dim")
             deep_params["hidden_dim"] = deep_params.get("model_dim")

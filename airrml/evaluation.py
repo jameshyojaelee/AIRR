@@ -3,7 +3,8 @@ Evaluation helpers for repertoire-level metrics, sequence-level set metrics,
 and cross-validation workflows.
 """
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Set
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
@@ -65,7 +66,7 @@ def cross_validate_model(
     """
     Run repertoire-level cross-validation within a single dataset.
     """
-    results: Dict[str, Any] = {"fold_scores": []}
+    results: Dict[str, Any] = {"fold_scores": [], "fold_top_sequences": []}
 
     if cv_folds is None or cv_folds < 2:
         results["mean_auc"] = float("nan")
@@ -100,9 +101,33 @@ def cross_validate_model(
             val_probs = prob_series.reindex(val_ids).to_numpy()
             auc = compute_auc(val_labels.to_numpy(), val_probs)
             results["fold_scores"].append(auc)
+
+            # Task 2 stability check: extract top sequences
+            try:
+                imp = model.get_sequence_importance(train_seq)
+                if imp is not None and not imp.empty:
+                    # Sort by score descending
+                    if "importance_score" in imp.columns:
+                        imp = imp.sort_values("importance_score", ascending=False)
+                    top_seqs = imp.head(2000)
+                    seq_keys = set((top_seqs["junction_aa"].astype(str) + "|" + top_seqs["v_call"].astype(str) + "|" + top_seqs["j_call"].astype(str)).tolist())
+                    results["fold_top_sequences"].append(seq_keys)
+            except Exception as e:
+                print(f"Warning: failed to extract sequence importance for fold: {e}")
         scores = np.array(results["fold_scores"])
         results["mean_auc"] = float(np.nanmean(scores)) if len(scores) else float("nan")
         results["std_auc"] = float(np.nanstd(scores)) if len(scores) else float("nan")
+
+        # Compute stability (mean pairwise Jaccard)
+        seq_sets = results.get("fold_top_sequences", [])
+        if len(seq_sets) > 1:
+            pair_scores = []
+            for a, b in combinations(seq_sets, 2):
+                pair_scores.append(compute_jaccard(list(a), list(b)))
+            results["mean_stability"] = float(np.mean(pair_scores))
+        else:
+            results["mean_stability"] = float("nan")
+
         return results
 
     # Classical models: build features per-fold to avoid leakage
@@ -126,7 +151,33 @@ def cross_validate_model(
         auc = compute_auc(y_val.to_numpy(), val_probs)
         results["fold_scores"].append(auc)
 
+        # Task 2 stability check: extract top sequences
+        try:
+            # Reconstruct sequence dataframe from X_train if possible?
+            # Classical models (kmer_logreg) can project back to sequences if they implement get_sequence_importance
+            # We pass the original `train_seq` for that
+            imp = model.get_sequence_importance(train_seq)
+            if imp is not None and not imp.empty:
+                if "importance_score" in imp.columns:
+                    imp = imp.sort_values("importance_score", ascending=False)
+                top_seqs = imp.head(2000)
+                seq_keys = set((top_seqs["junction_aa"].astype(str) + "|" + top_seqs["v_call"].astype(str) + "|" + top_seqs["j_call"].astype(str)).tolist())
+                results["fold_top_sequences"].append(seq_keys)
+        except Exception:
+            pass
+
     scores = np.array(results["fold_scores"])
     results["mean_auc"] = float(np.nanmean(scores)) if len(scores) else float("nan")
     results["std_auc"] = float(np.nanstd(scores)) if len(scores) else float("nan")
+
+    # Compute stability (mean pairwise Jaccard)
+    seq_sets = results.get("fold_top_sequences", [])
+    if len(seq_sets) > 1:
+        pair_scores = []
+        for a, b in combinations(seq_sets, 2):
+            pair_scores.append(compute_jaccard(list(a), list(b)))
+        results["mean_stability"] = float(np.mean(pair_scores))
+    else:
+        results["mean_stability"] = float("nan")
+
     return results
