@@ -1,6 +1,6 @@
 # AIRR-ML (AIRR) — HPC-first Kaggle workflow
 
-This repo is an HPC/Slurm-friendly codebase for the AIRR-ML Kaggle challenge:
+This repo is for the AIRR-ML Kaggle challenge:
 
 - **Task 1**: repertoire-level immune state prediction (AUC)
 - **Task 2**: label-associated sequence identification (Jaccard vs hidden set)
