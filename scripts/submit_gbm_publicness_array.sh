@@ -4,7 +4,7 @@
 #SBATCH --partition=cpu
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
-#SBATCH --time=4:00:00
+#SBATCH --time=48:00:00
 #SBATCH --output=logs/%x-%A_%a.out
 
 set -euo pipefail

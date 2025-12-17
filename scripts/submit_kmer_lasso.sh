@@ -4,9 +4,9 @@
 #SBATCH --error=logs/airrml-kmer-%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=512G
 #SBATCH --time=12:00:00
-#SBATCH --partition=cpu
+#SBATCH --partition=bigmem
 
 export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/run_experiment.py --config configs/kmer_lasso.json
