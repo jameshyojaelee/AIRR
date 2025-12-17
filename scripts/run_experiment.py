@@ -44,6 +44,8 @@ def load_config(path: Path) -> Dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run AIRR-ML-25 experiment")
     parser.add_argument("--config", type=Path, required=True, help="Path to YAML/JSON config file")
+    parser.add_argument("--dataset", type=str, help="Run only on a specific dataset (e.g. train_dataset_1)")
+    parser.add_argument("--skip-submission", action="store_true", help="Skip submission generation")
     return parser.parse_args()
 
 
@@ -72,17 +74,36 @@ def main() -> None:
     cv_folds = training_cfg.get("cv_folds", 5)
     random_state = training_cfg.get("random_state", 123)
 
-    print(f"Training model '{model_name}' across datasets in {train_root}...")
-    summary = training.train_all_datasets(
-        train_root=str(train_root),
-        model_name=model_name,
-        feature_config=feature_config,
-        output_root=str(output_root),
-        cv_folds=cv_folds,
-        random_state=random_state,
-        test_root=str(test_root),
-        model_params=model_params,
-    )
+    if args.dataset:
+        from airrml import data
+        dataset_map = data.list_datasets(str(train_root), str(test_root))
+        if args.dataset not in dataset_map:
+             raise ValueError(f"Dataset {args.dataset} not found in {train_root}")
+        print(f"Training model '{model_name}' on single dataset: {args.dataset}...")
+        info = dataset_map[args.dataset]
+        res = training.train_on_dataset(
+            dataset_name=args.dataset,
+            train_path=info["train_path"],
+            model_name=model_name,
+            feature_config=feature_config,
+            output_dir=str(output_root),
+            cv_folds=cv_folds,
+            random_state=random_state,
+            model_params=model_params,
+        )
+        summary = {args.dataset: res.get("cv", {}).get("mean_auc")}
+    else:
+        print(f"Training model '{model_name}' across datasets in {train_root}...")
+        summary = training.train_all_datasets(
+            train_root=str(train_root),
+            model_name=model_name,
+            feature_config=feature_config,
+            output_root=str(output_root),
+            cv_folds=cv_folds,
+            random_state=random_state,
+            test_root=str(test_root),
+            model_params=model_params,
+        )
 
     mean_auc = None
     if summary:
@@ -99,6 +120,10 @@ def main() -> None:
         submission_path = Path(output_root) / "submission.csv"
     else:
         submission_path = submission_cfg.get("submission_path", output_root / "submission.csv")
+
+    if args.skip_submission:
+        print("Skipping submission generation (--skip-submission set).")
+        return
 
     print(f"Building submission to {submission_path}...")
     assemble_submission(
