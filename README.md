@@ -59,7 +59,8 @@ Models live under `airrml/models/` and are selected via `model_name` in configs.
   - Transformer encoder + attention pooling MIL
   - Used for Task 1 predictions and sequence scoring (attention/gradient-based)
 - `kmer_logreg` (tabular, fast baseline): `airrml/models/kmer_logreg.py`
-  - k-mer features + logistic regression; can provide sequence importance via projection
+  - k-mer features + logistic regression; can provide sequence importance via projection.
+  - **K-mer Lasso** (Strategy #2): A specific L1-regularized config (`configs/kmer_lasso.json`) designed to mine short binding motifs (3-4aa) rather than full sequences.
 - `gbm` (tabular): `airrml/models/gradient_boosting.py`
   - Gradient boosting over engineered features
 - `enrichment_bayes` (sequence-consuming, Phase 5): `airrml/models/enrichment_bayes.py`

@@ -256,6 +256,14 @@ Work items:
 - [ ] **Quantile Ensembling**: Normalize scores before aggregation to robustly combine statistical and deep-learning signals.
 - [ ] **Deep MIL Diversity**: Add attention orthogonality loss to prevent collapse to trivial sequences.
 
+#### Phase 5.5 — Late-Game Optimizations (Dec 16)
+Goal: Break the 0.60 ceiling by capturing non-exact sequence matches.
+
+Work items:
+- [x] **Deduplication Strategy**: Cluster near-identical sequences in Task 2 output to maximize "biological signal per slot" (`scripts/run_auto_ensemble.py --dedup-near`).
+- [ ] **K-mer Lasso (Strategy #2)**: Run L1-regularized logistic regression on 3-4mers to identify short binding motifs that exact-match enrichment misses.
+- [ ] **Deep MIL Fine-Tuning (Strategy #3)**: Utilize the Contrastive Pretrained encoder (trained on 247M sequences) to boost Deep MIL performance.
+
 #### Phase 6 — Kaggle Submission Protocol (Daily until deadline)
 Because we only get 5 submissions/day:
 -   Submit only after passing Phase 0 checks.
