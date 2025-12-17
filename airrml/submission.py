@@ -118,7 +118,18 @@ def build_repertoire_predictions(
         probs = model.predict_proba(test_sequences_df)
     else:
         feature_info = feature_info or {}
-        config_dict = {"use_kmers": "kmer" in feature_info, "use_vj": "vj" in feature_info}
+        # Build the same feature blocks used during training based on persisted feature_info.
+        # This avoids silently dropping feature blocks (e.g., length/publicness/tcrdist) at inference time.
+        config_dict = {
+            "use_kmers": "kmer" in feature_info,
+            "use_vj": "vj" in feature_info,
+            "use_length": "length" in feature_info,
+            "use_tcrdist_nystrom": "tcrdist" in feature_info,
+            "use_publicness": "publicness" in feature_info,
+        }
+        if not any(config_dict.values()):
+            # Fallback for legacy artifacts that may not persist feature_info blocks.
+            config_dict = {"use_kmers": True}
         X_test, _, _ = build_combined_feature_matrix(test_sequences_df, test_repertoires_df, config_dict, feature_info=feature_info)  # type: ignore
         if hasattr(model, "set_feature_info"):
             model.set_feature_info(feature_info)
