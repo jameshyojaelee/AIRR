@@ -338,9 +338,9 @@ def main() -> int:
     out = pd.concat([seq, rep], ignore_index=True)[config.SUBMISSION_COLUMNS]
     out["ID"] = out["ID"].astype(str)
     out["dataset"] = out["dataset"].astype(str)
-    out["junction_aa"] = out["junction_aa"].astype(str)
-    out["v_call"] = out["v_call"].astype(str)
-    out["j_call"] = out["j_call"].astype(str)
+    out["junction_aa"] = out["junction_aa"].fillna("-999.0").astype(str).replace("", "-999.0")
+    out["v_call"] = out["v_call"].fillna("-999.0").astype(str).replace("", "-999.0")
+    out["j_call"] = out["j_call"].fillna("-999.0").astype(str).replace("", "-999.0")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(args.output, index=False)

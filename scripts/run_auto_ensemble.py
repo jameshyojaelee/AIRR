@@ -44,9 +44,9 @@ def main():
     # Format: (pattern, weight_task1, weight_task2).
     # These are starting points; override by calling `scripts/ensemble_submissions.py` directly.
     experiments = [
-        ("enrichment_run1-*", 0.15, 1.0),        # Strong Task 2, weaker Task 1
-        ("gbm_publicness-*", 1.0, 0.0),          # Strong Task 1
-        ("deepmil_finetune_v1-*", 0.5, 0.5),     # Both tasks (when available)
+        ("enrichment_bayes-*", 0.15, 1.0),       # New Bayesian Enrichment (Task 2)
+        ("gbm_publicness-*", 1.0, 0.0),          # GBM (Task 1)
+        ("deepmil_transformer-*", 0.5, 0.5),     # DeepMIL (Task 1 + Task 2)
     ]
 
     found_submissions: List[Tuple[Path, float, float]] = []

@@ -42,7 +42,9 @@ def _ok(msg: str) -> None:
 
 
 def _is_blank_series(s: pd.Series) -> pd.Series:
-    return s.fillna("").astype(str).eq("")
+    # Blank if empty string, NaN, or "-999.0"
+    s_str = s.fillna("").astype(str)
+    return s_str.eq("") | s_str.eq("-999.0")
 
 
 def parse_args() -> argparse.Namespace:

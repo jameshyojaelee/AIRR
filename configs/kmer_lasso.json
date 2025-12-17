@@ -1,0 +1,37 @@
+{
+    "train_root": "train_datasets",
+    "test_root": "test_datasets/test_datasets",
+    "output_root": "outputs/kmer_lasso_v1",
+    "model_name": "kmer_logreg",
+    "feature_config": {
+        "use_kmers": true,
+        "k_list": [
+            3,
+            4
+        ],
+        "tfidf": true,
+        "hashing": false,
+        "use_vj": false,
+        "use_length": false,
+        "use_publicness": false,
+        "sequence_col": "junction_aa"
+    },
+    "training": {
+        "cv_folds": 5,
+        "random_state": 42,
+        "top_k_sequences": 25000
+    },
+    "model_params": {
+        "penalty": "l1",
+        "c_grid": [
+            0.05,
+            0.1,
+            0.2,
+            0.5,
+            1.0,
+            2.0
+        ],
+        "opt_metric": "roc_auc",
+        "n_jobs": -1
+    }
+}

@@ -334,8 +334,7 @@ class DeepMILModel(BaseRepertoireModel):
         use_amp: bool = True,
         grad_clip: Optional[float] = 1.0,
         early_stop_patience: int = 3,
-        grad_clip: Optional[float] = 1.0,
-        early_stop_patience: int = 3,
+
         ortho_loss_weight: float = 0.0,
         **kwargs: Any,
     ) -> None:
